@@ -99,6 +99,7 @@ def match_envelopes(
             groups[-1].append((start, offset))
         else:
             groups.append([(start, offset)])
+    groups = _drop_outliers(groups)
     spans = []
     for group in groups:
         offset = int(round(np.median([item[1] for item in group])))
@@ -128,6 +129,30 @@ def match_envelopes(
         for start, end, offset in spans
         if end > start
     ]
+
+
+def _drop_outliers(groups: list[list[tuple[int, int]]], *, max_windows: int = 2) -> list[list[tuple[int, int]]]:
+    """Drop tiny matches that jump backwards while their neighbours run in order.
+
+    A window straddling a cut can latch onto similar-sounding speech elsewhere.
+    Real edits that re-use earlier footage last longer than a couple of windows.
+    """
+    kept = list(groups)
+    changed = True
+    while changed:
+        changed = False
+        for index in range(1, len(kept) - 1):
+            group, before, after = kept[index], kept[index - 1], kept[index + 1]
+            if len(group) > max_windows:
+                continue
+            original_start = group[0][0] + group[0][1]
+            before_end = before[-1][0] + before[-1][1]
+            after_start = after[0][0] + after[0][1]
+            if original_start < before_end and after_start >= before_end:
+                del kept[index]
+                changed = True
+                break
+    return kept
 
 
 def match_edit(original: Path, edited: Path, *, ffmpeg: Path) -> list[Segment]:

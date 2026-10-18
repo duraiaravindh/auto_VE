@@ -6,7 +6,7 @@ except ImportError:  # the core app runs without numpy; this feature needs it
     np = None
 
 if np is not None:
-    from namakadhai.edit_matcher import Segment, map_words, match_envelopes
+    from namakadhai.edit_matcher import Segment, _drop_outliers, map_words, match_envelopes
 
 
 @unittest.skipIf(np is None, "numpy is only installed in the alignment environment")
@@ -43,6 +43,17 @@ class EditMatcherTests(unittest.TestCase):
         self.assertIsNone(mapped[1])
         self.assertAlmostEqual(mapped[2][0], 21.0)
         self.assertIsNone(mapped[3])
+
+    def test_short_backward_jump_between_ordered_parts_is_dropped(self):
+        # (edited start frame, offset): the middle window claims audio from long before.
+        groups = [[(0, 0), (50, 0)], [(150, -1200)], [(200, 30), (250, 30)]]
+
+        self.assertEqual(_drop_outliers(groups), [groups[0], groups[2]])
+
+    def test_long_reused_part_is_kept(self):
+        groups = [[(0, 0), (50, 0)], [(150, -100), (200, -100), (250, -100)], [(400, 30)]]
+
+        self.assertEqual(_drop_outliers(groups), groups)
 
 
 if __name__ == "__main__":
