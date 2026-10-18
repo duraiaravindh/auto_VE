@@ -38,6 +38,22 @@ class ForcedAlignTests(unittest.TestCase):
         self.assertEqual([cue["text"] for cue in aligned], ["Naama chinna"])
         self.assertEqual(report["not_in_audio"], ["cut line"])
 
+    def test_long_two_line_cue_is_split_at_the_pause_keeping_every_word(self):
+        text = "vera vera padatha ore TV-la ore time-la eppadi paakaradhudhanga"
+        starts = [16.9, 17.2, 17.4, 17.9, 18.4, 18.7, 19.0, 19.3, 19.6]
+        starts[4:] = [s + 0.5 for s in starts[4:]]  # a pause before "TV-la"
+        timings = [(s, s + 0.25, 0.8) for s in starts]
+
+        aligned, report = build_aligned_captions([{"text": text}], timings, video_duration_seconds=30.0)
+
+        self.assertEqual([c["text"] for c in aligned],
+                         ["vera vera padatha ore", "TV-la ore time-la eppadi", "paakaradhudhanga"])
+        self.assertEqual(" ".join(c["text"] for c in aligned), text)
+        self.assertTrue(all(len(c["text"]) <= 32 for c in aligned))
+        self.assertEqual(report["long_captions_split"], 1)
+        for previous, current in zip(aligned, aligned[1:]):
+            self.assertLessEqual(previous["end"], current["start"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -181,6 +181,39 @@ def select_spoken_cues(
     return kept
 
 
+def _split_long(
+    pairs: list[tuple[str, tuple[float, float, float]]], max_chars: int
+) -> list[list[tuple[str, tuple[float, float, float]]]]:
+    """Split one cue's timed words into pieces of at most ``max_chars``.
+
+    Pieces are balanced in length, and each break goes at the longest pause
+    among the reasonable break points.
+    """
+    total = len(" ".join(word for word, _ in pairs))
+    if total <= max_chars or len(pairs) < 2:
+        return [pairs]
+    pieces_wanted = math.ceil(total / max_chars)
+    target = total / pieces_wanted
+    pieces, start = [], 0
+    while start < len(pairs):
+        remaining = len(" ".join(word for word, _ in pairs[start:]))
+        if remaining <= max_chars:
+            pieces.append(pairs[start:])
+            break
+        options, length = [], -1
+        for end in range(start + 1, len(pairs)):
+            length += len(pairs[end - 1][0]) + 1
+            if length > max_chars:
+                break
+            gap = pairs[end][1][0] - pairs[end - 1][1][1]
+            near_target = 0.6 * target <= length <= 1.3 * target
+            options.append((near_target, gap, end))
+        end = max(options)[2] if options else start + 1
+        pieces.append(pairs[start:end])
+        start = end
+    return pieces
+
+
 def build_aligned_captions(
     cues: list[dict[str, Any]],
     timings: list[tuple[float, float, float] | None],
@@ -189,8 +222,13 @@ def build_aligned_captions(
     lead_seconds: float = 0.15,
     hold_seconds: float = 0.4,
     low_score: float = 0.35,
+    max_chars: int = 32,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Turn per-word timings into cues that start on the first spoken word."""
+    """Turn per-word timings into cues that start on the first spoken word.
+
+    Cues longer than ``max_chars`` (32 fits two vertical lines or one landscape
+    line) are split into shorter captions; the words and their order are kept.
+    """
     words_per_cue = [str(cue["text"]).split() for cue in cues]
     cursor = 0
     spoken: list[list[tuple[str, tuple[float, float, float]]]] = []
@@ -210,7 +248,18 @@ def build_aligned_captions(
         present.append(cue)
     if not spoken:
         raise SubtitleImportError("None of the caption lines were found in the audio.")
-    cues = present
+    # Transcription tools write two-line cues of 50-70 characters; split them into
+    # short on-screen captions at word boundaries, preferring natural pauses.
+    cues, chunks = [], []
+    split_count = 0
+    for cue, pairs in zip(present, spoken):
+        pieces = _split_long(pairs, max_chars)
+        split_count += len(pieces) > 1
+        for piece in pieces:
+            text = str(cue["text"]) if len(pieces) == 1 else " ".join(w for w, _ in piece)
+            cues.append({**cue, "text": text})
+            chunks.append(piece)
+    spoken = chunks
 
     aligned: list[dict[str, Any]] = []
     low_confidence: list[str] = []
@@ -253,6 +302,7 @@ def build_aligned_captions(
         "mean_word_confidence": round(sum(scores) / len(scores), 3),
         "low_confidence_words": low_confidence,
         "not_in_audio": not_in_audio,
+        "long_captions_split": split_count,
         "text_preserved_exactly": True,
     }
     return aligned, report
