@@ -376,7 +376,7 @@
         card.className="decision"+(status!=="unresolved"&&status!=="pending"?" resolved":""); top.className="decision-top";
         top.appendChild(textNode("div",decisionTimes(item),"timecode")); top.appendChild(textNode("span",status,"status-chip "+status)); card.appendChild(top);
         card.appendChild(textNode("p",pick(item,["reason","measured_evidence","description","suggestion","label"],"Review this proposed change against the recording."),"reason"));
-        var kindLabel={retake:"Retake",repeat:"Repeat",filler:"Filler"}[item.kind]||"Long pause", receipt=(project.decision_receipts||{})[itemId]||{};
+        var kindLabel={retake:"Retake",repeat:"Repeat",filler:"Filler",unscripted:"Not in your subtitles"}[item.kind]||"Long pause", receipt=(project.decision_receipts||{})[itemId]||{};
         var ev=item.evidence||{}, said=ev.earlier?"“"+ev.earlier+"” then “"+ev.later+"”":ev.phrase?"“"+ev.phrase+" "+ev.phrase+"”":ev.word?"“"+ev.word+"”":"";
         card.insertBefore(textNode("p",kindLabel+(said?" · "+said:"")+(receipt.actor==="auto"?" · pre-set by auto":""),"microcopy"),card.lastChild);
         var rangeText=item.source_start_seconds!==undefined&&item.source_end_seconds!==undefined?(item.kind?"Cut ":"Quiet interval ")+timecode(item.source_start_seconds)+" — "+timecode(item.source_end_seconds):"";

@@ -61,6 +61,28 @@ class AutoSuggestTests(unittest.TestCase):
         self.assertAlmostEqual(end, 3.1)
         self.assertAlmostEqual((3.3 - 1.3) - (end - start), 0.45)
 
+    def test_pause_follows_real_silence_inside_the_gap(self):
+        words = [Word("paakaradhudhanga", 19.6, 20.0), Word("Actually", 21.8, 22.2)]
+        speech = [False] * 3000
+        for frame in range(1960, 2050):  # the word really ends at 20.5 s
+            speech[frame] = True
+
+        cuts = suggest_cuts([words], speech=speech)
+
+        self.assertEqual(self.kinds(cuts), [("pause", "high", "APPROVED")])
+        start, _ = cuts[0]["proposed_cut_seconds"]
+        self.assertAlmostEqual(start, 20.75)  # never clips the word's tail
+
+    def test_speech_the_subtitles_skip_is_flagged_never_cut_as_a_pause(self):
+        words = [Word("iruppom", 23.5, 23.8), Word("oru", 25.2, 25.3)]
+        speech = [False] * 3000
+        for frame in range(2398, 2525):  # "oru channel-la andha" missing from the SRT
+            speech[frame] = True
+
+        cuts = suggest_cuts([words], speech=speech)
+
+        self.assertEqual(self.kinds(cuts), [("unscripted", "low", "REJECTED")])
+
 
 if __name__ == "__main__":
     unittest.main()

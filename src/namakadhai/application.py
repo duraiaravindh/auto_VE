@@ -16,6 +16,8 @@ from typing import Any, Callable
 
 from namakadhai.auto_edit import FasterWhisperProvider
 from namakadhai.auto_suggest import Word, suggest_cuts
+from namakadhai.media_review import _resolve_ffmpeg
+from namakadhai.subtitle_import import detect_speech_activity, measure_speech_envelope
 from namakadhai.caption_renderer import load_caption_cues
 from namakadhai.probe import probe_video
 from namakadhai.publishing import create_publishing_package
@@ -509,7 +511,12 @@ class ProjectApplication:
                 music_path=(music_data.get("path") if isinstance(music_data, dict) else None),
             )
             plan_payload = json.loads(new_plan.read_text(encoding="utf-8"))
-            word_cuts = suggest_cuts(lines)
+            # Speech activity from the audio itself: pause cuts follow real silence,
+            # and speech the subtitles skip is flagged instead of being cut.
+            speech = detect_speech_activity(
+                measure_speech_envelope(record["source"]["path"], _resolve_ffmpeg(self.settings_path))
+            )
+            word_cuts = suggest_cuts(lines, speech=speech)
             # Long pauses: the silence candidates keep padding on both sides, so a
             # pause shrinks to a natural length instead of vanishing.
             pauses = []

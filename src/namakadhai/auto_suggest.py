@@ -12,7 +12,7 @@ import difflib
 import hashlib
 import re
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 PURE_FILLERS = frozenset({"um", "umm", "uh", "uhh", "erm", "hmm", "hmmm", "mmm", "ah", "aah"})
 # Tamil/Tanglish words that are often fillers but also real words: never pre-ticked.
@@ -151,32 +151,87 @@ def find_fillers(words: list[Word], *, extra: Iterable[str] = ()) -> list[dict[s
 
 
 def find_pauses(
-    words: list[Word], *, minimum: float = 1.0, keep_after: float = 0.25, keep_before: float = 0.2,
+    words: list[Word],
+    *,
+    speech: Sequence[bool] | None = None,
+    frame_seconds: float = 0.01,
+    minimum: float = 1.0,
+    keep_after: float = 0.25,
+    keep_before: float = 0.2,
 ) -> list[dict[str, Any]]:
-    """Long gaps between spoken words, shortened to a natural ~0.45 s (never removed).
+    """Long pauses between words, shortened to a natural ~0.45 s (never removed).
 
-    Uses word timings rather than a loudness threshold, so room noise can't
-    hide a pause.
+    A gap between subtitle words is only a candidate: the subtitles may skip
+    words that were spoken there, and word end times can be early. With the
+    audio's ``speech`` activity (one flag per frame), only the silent stretch
+    inside the gap is shortened, and speech the subtitles don't contain is
+    flagged instead (low confidence, never pre-ticked).
     """
     found = []
     for previous, following in zip(words, words[1:]):
         gap = following.start - previous.end
         if gap < minimum:
             continue
+        evidence = {"after": previous.text, "before": following.text, "gap_seconds": round(gap, 2)}
+        silent_start, silent_end = previous.end, following.start
+        spoken_seconds = 0.0
+        if speech is not None:
+            first, last = int(previous.end / frame_seconds), int(following.start / frame_seconds)
+            flags = list(speech[first:last])
+            runs, run_start = [], None  # (start, end, is_speech) frame runs
+            for index, flag in enumerate(flags + [not (flags[-1] if flags else False)]):
+                if run_start is None:
+                    run_start = index
+                elif flag != flags[run_start]:
+                    runs.append((run_start, index, flags[run_start]))
+                    run_start = index
+            silent = [run for run in runs if not run[2]]
+            best = max(silent, key=lambda run: run[1] - run[0], default=(0, 0, False))
+            silent_start = (first + best[0]) * frame_seconds
+            silent_end = (first + best[1]) * frame_seconds
+            # Up to 0.3 s next to each word is that word running on (timings can
+            # be early or late); speech beyond that isn't in the subtitles.
+            allowance = int(0.3 / frame_seconds)
+            unexplained = [
+                index for index, flag in enumerate(flags)
+                if flag and allowance <= index < len(flags) - allowance
+            ]
+            spoken_seconds = len(unexplained) * frame_seconds
+            if spoken_seconds >= 0.4:
+                found.append(_candidate(
+                    "unscripted", (first + unexplained[0]) * frame_seconds,
+                    (first + unexplained[-1] + 1) * frame_seconds, "low",
+                    "Speech here isn't in your subtitles: a missing line, an ad-lib or a retake.",
+                    {**evidence, "speech_seconds": round(spoken_seconds, 2)},
+                ))
+                if best[0] <= unexplained[-1] and best[1] > unexplained[0]:
+                    continue  # that speech breaks up the silence: no pause cut
+        silence = silent_end - silent_start
+        if silence < minimum:
+            continue
         found.append(_candidate(
-            "pause", previous.end + keep_after, following.start - keep_before,
-            "high" if gap >= 1.2 else "medium",
-            f"Long pause ({gap:.1f}s) shortened to a natural gap.",
-            {"after": previous.text, "before": following.text, "gap_seconds": round(gap, 2)},
+            "pause", silent_start + keep_after, silent_end - keep_before,
+            "high" if silence >= 1.2 else "medium",
+            f"Long pause ({silence:.1f}s) shortened to a natural gap.",
+            {**evidence, "silence_seconds": round(silence, 2)},
         ))
     return found
 
 
-def suggest_cuts(lines: list[list[Word]], *, extra_fillers: Iterable[str] = ()) -> list[dict[str, Any]]:
-    """All suggestions, non-overlapping, preferring retakes > repeats > fillers > pauses."""
+def suggest_cuts(
+    lines: list[list[Word]],
+    *,
+    extra_fillers: Iterable[str] = (),
+    speech: Sequence[bool] | None = None,
+) -> list[dict[str, Any]]:
+    """All suggestions, non-overlapping, preferring retakes > repeats > fillers > pauses.
+
+    ``speech`` (10 ms speech-activity flags for the audio) makes pause cuts
+    follow real silence; without it, word gaps are trusted as they are.
+    """
     words = [word for line in lines for word in line]
     ordered = (find_retakes(lines) + find_repeats(words)
-               + find_fillers(words, extra=extra_fillers) + find_pauses(words))
+               + find_fillers(words, extra=extra_fillers) + find_pauses(words, speech=speech))
     kept: list[dict[str, Any]] = []
     for item in ordered:
         start, end = item["proposed_cut_seconds"]

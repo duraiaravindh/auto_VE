@@ -192,9 +192,14 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(command[-2:], ["--edited", str(self.source.resolve())])
         self.assertEqual(original.read_bytes(), b"raw recording")
 
+    @patch("namakadhai.application._resolve_ffmpeg", return_value="ffmpeg.exe")
+    @patch("namakadhai.application.measure_speech_envelope", return_value=[-60.0] * 1000)
+    @patch("namakadhai.application.detect_speech_activity", return_value=[False] * 1000)
     @patch("namakadhai.application.record_story_decision")
     @patch("namakadhai.application.create_story_plan")
-    def test_auto_mode_pre_ticks_confident_cuts_and_stops_at_review(self, create_plan, decide):
+    def test_auto_mode_pre_ticks_confident_cuts_and_stops_at_review(
+        self, create_plan, decide, _activity, _envelope, _ffmpeg
+    ):
         app, record, _ = self._project_with_outputs("auto-story-123456")
         directory = app.projects_root / "auto-story-123456"
         (directory / "creative_profile.json").write_text(
