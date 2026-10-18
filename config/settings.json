@@ -1,0 +1,61 @@
+{
+  "project": {
+    "name": "Nama Kadhai Video Automation",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "assets": "assets",
+    "incoming": "data/incoming",
+    "projects": "projects",
+    "exports": "exports",
+    "temp": "temp",
+    "models": "models",
+    "ffmpeg_executable": "tools/ffmpeg-9.0.2-full_build/bin/ffmpeg.exe",
+    "ffprobe_executable": "tools/ffmpeg-9.0.2-full_build/bin/ffprobe.exe"
+  },
+  "ingest": {
+    "accepted_extensions": [
+      ".mp4",
+      ".mov",
+      ".mkv",
+      ".m4v"
+    ],
+    "preserve_originals": true,
+    "skip_already_processed": true
+  },
+  "analysis": {
+    "audio": {
+      "silence_threshold_db": -35.0,
+      "minimum_silence_duration_seconds": 1.0
+    },
+    "silence": {
+      "minimum_duration_seconds": 1.0,
+      "padding_before_seconds": 0.25,
+      "padding_after_seconds": 0.25
+    }
+  },
+  "transcription": {
+    "enabled": true,
+    "engine": "faster-whisper",
+    "model": "small",
+    "device": "cpu",
+    "compute_type": "int8",
+    "language": "ta",
+    "task": "transcribe",
+    "word_timestamps": true,
+    "beam_size": 5,
+    "download_model_on_first_use": false,
+    "caption_mode": "tanglish_draft",
+    "confidence_threshold": 0.35
+  },
+  "automation": {
+    "default_mode": "auto",
+    "final_human_approval_required": true,
+    "auto_decision_actor": "auto",
+    "filler_words": ["um", "uh", "erm", "hmm", "அம்", "உம்", "அதாவது", "வந்து", "enna", "vandhu", "athavathu"]
+  },
+  "export": {
+    "overwrite_existing": false,
+    "youtube_preset": "1080p"
+  }
+}

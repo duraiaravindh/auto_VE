@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nama Kadhai — Local editing room</title>
+  <style>
+    :root {
+      --canvas:#f4ecdd; --paper:#fffaf0; --paper-deep:#eee0c8; --ink:#281d18;
+      --muted:#695b51; --marigold:#c58a28; --marigold-dark:#805414; --teal:#326b62;
+      --oxblood:#8c3b32; --line:#d7c8b2; --shadow:0 18px 50px rgba(61,39,24,.12);
+      --serif:Georgia,Cambria,"Nirmala UI",serif; --sans:"Segoe UI","Nirmala UI",Arial,sans-serif;
+    }
+    * { box-sizing:border-box }
+    html { background:var(--canvas); color:var(--ink); font-family:var(--sans) }
+    body { margin:0; min-height:100vh; background:
+      radial-gradient(circle at 14% 4%,rgba(197,138,40,.11),transparent 24rem),
+      repeating-linear-gradient(95deg,rgba(75,48,25,.018) 0,rgba(75,48,25,.018) 1px,transparent 1px,transparent 7px),
+      var(--canvas); }
+    button,input,select,textarea { font:inherit; color:inherit }
+    button,a,input,select,textarea,summary { outline-offset:3px }
+    :focus-visible { outline:3px solid #0d746b }
+    button { min-height:44px; border:1px solid var(--ink); padding:.65rem 1rem; background:transparent; cursor:pointer; font-weight:700; letter-spacing:.01em; transition:transform .15s,box-shadow .15s,background .15s }
+    button:hover:not(:disabled) { transform:translateY(-1px); box-shadow:3px 3px 0 var(--ink) }
+    button:disabled { opacity:.45; cursor:not-allowed }
+    .primary { color:#fffaf0; background:var(--ink); border-color:var(--ink) }
+    .accent { color:#21170d; background:var(--marigold); border-color:var(--marigold-dark) }
+    .danger { color:var(--oxblood); border-color:var(--oxblood) }
+    .quiet { border-color:var(--line); background:rgba(255,250,240,.6) }
+    .small-button { min-height:36px; padding:.4rem .7rem; font-size:.82rem }
+    .topline { height:5px; background:linear-gradient(90deg,var(--oxblood) 0 22%,var(--marigold) 22% 72%,var(--teal) 72%) }
+    .masthead { max-width:1440px; margin:auto; padding:1rem clamp(1rem,4vw,3.5rem); display:flex; align-items:center; justify-content:space-between; gap:1rem; border-bottom:1px solid rgba(128,84,20,.24) }
+    .brand { display:flex; align-items:baseline; gap:.8rem; min-width:0 }
+    .brand h1 { font:700 clamp(1.45rem,3vw,2.15rem)/1 var(--serif); margin:0; letter-spacing:-.04em }
+    .brand h1::first-letter { color:var(--oxblood) }
+    .brand p { margin:0; color:var(--muted); font-size:.78rem; text-transform:uppercase; letter-spacing:.16em }
+    .local-badge { display:flex; align-items:center; gap:.5rem; border:1px solid var(--teal); color:var(--teal); padding:.42rem .65rem; font-size:.76rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; white-space:nowrap }
+    .local-badge::before { content:""; width:.55rem; height:.55rem; border-radius:50%; background:currentColor; box-shadow:0 0 0 4px rgba(50,107,98,.13) }
+    .local-badge.warn { color:var(--oxblood); border-color:var(--oxblood) }
+    main { max-width:1440px; margin:auto; padding:1.25rem clamp(1rem,4vw,3.5rem) 4rem }
+    .story-ribbon { position:relative; display:grid; grid-template-columns:repeat(5,1fr); margin:0 0 2rem; padding:.8rem .5rem; border-block:1px solid var(--line); overflow-x:auto; background:rgba(255,250,240,.48) }
+    .story-ribbon::before { content:""; position:absolute; left:7%; right:7%; top:2.08rem; border-top:1px solid var(--line) }
+    .act { position:relative; min-width:125px; text-align:center; border:0; box-shadow:none!important; background:transparent; padding:.2rem .5rem; color:var(--muted) }
+    .act:hover:not(:disabled) { transform:none }
+    .act-mark { display:grid; place-items:center; width:1.55rem; height:1.55rem; margin:0 auto .42rem; border:1px solid var(--line); border-radius:50%; background:var(--canvas); font:700 .72rem var(--serif) }
+    .act strong { display:block; font:700 .86rem var(--serif) }
+    .act small { display:block; margin-top:.12rem; font-size:.67rem; text-transform:uppercase; letter-spacing:.08em }
+    .act.active { color:var(--marigold-dark) }
+    .act.active .act-mark { color:var(--ink); background:var(--marigold); border-color:var(--marigold-dark); box-shadow:0 0 0 5px rgba(197,138,40,.16) }
+    .act.done { color:var(--teal) }
+    .act.done .act-mark { color:white; background:var(--teal); border-color:var(--teal) }
+    .eyebrow { margin:0 0 .45rem; color:var(--marigold-dark); font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.16em }
+    h2,h3 { font-family:var(--serif); letter-spacing:-.025em }
+    h2 { font-size:clamp(1.65rem,4vw,2.65rem); line-height:1.05; margin:.1rem 0 .75rem }
+    h3 { margin:.15rem 0 .55rem; font-size:1.25rem }
+    p { line-height:1.58 }
+    .new-project { max-width:800px; margin:2rem auto; background:var(--paper); border:1px solid var(--line); box-shadow:var(--shadow); position:relative }
+    .new-project::before { content:""; position:absolute; inset:7px; pointer-events:none; border:1px solid rgba(140,59,50,.18) }
+    .new-project header { padding:clamp(1.5rem,5vw,3rem) clamp(1.35rem,5vw,3.5rem) 1rem; position:relative }
+    .new-project header p:last-child { max-width:57ch; color:var(--muted); margin-bottom:0 }
+    .project-form { padding:1rem clamp(1.35rem,5vw,3.5rem) clamp(1.7rem,5vw,3rem); position:relative }
+    .field-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem 1.25rem }
+    .field { display:grid; gap:.42rem }
+    .field.full { grid-column:1/-1 }
+    label,.label { font-size:.77rem; font-weight:800; letter-spacing:.035em }
+    input,select,textarea { width:100%; border:1px solid #bca98f; background:#fffdf8; padding:.72rem .8rem; min-height:44px }
+    input:focus,select:focus,textarea:focus { border-color:var(--teal); box-shadow:0 0 0 2px rgba(50,107,98,.14) }
+    textarea { resize:vertical; line-height:1.5 }
+    .microcopy { color:var(--muted); font-size:.75rem; margin:0 }
+    details.advanced { grid-column:1/-1; border-block:1px solid var(--line); margin-top:.3rem; padding:.2rem 0 }
+    details summary { cursor:pointer; padding:.9rem 0; font-family:var(--serif); font-weight:700 }
+    .advanced-grid { padding:.25rem 0 1rem }
+    .range-row { display:grid; grid-template-columns:1fr auto; gap:.5rem; align-items:center }
+    input[type="range"] { accent-color:var(--marigold-dark); padding:0; border:0; background:transparent }
+    .switch-row { min-height:44px; display:flex; gap:.75rem; align-items:center }
+    .switch-row input { width:1.1rem; height:1.1rem; min-height:0; accent-color:var(--teal) }
+    .form-footer { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding-top:1.35rem }
+    .workspace { display:grid; grid-template-columns:minmax(0,2fr) minmax(280px,1fr); gap:1.4rem; align-items:start }
+    .main-sheet { min-width:0; background:var(--paper); border:1px solid var(--line); box-shadow:var(--shadow) }
+    .project-summary { padding:1.4rem clamp(1rem,3vw,2rem); border-bottom:1px solid var(--line); display:grid; grid-template-columns:1.3fr 1fr; gap:1.25rem }
+    .project-summary h2 { font-size:clamp(1.45rem,3vw,2rem) }
+    .summary-meta { display:grid; grid-template-columns:repeat(2,1fr); gap:.7rem 1rem; margin:0 }
+    .summary-meta div { border-left:2px solid var(--marigold); padding-left:.65rem; min-width:0 }
+    dt { color:var(--muted); font-size:.66rem; font-weight:800; text-transform:uppercase; letter-spacing:.1em }
+    dd { margin:.2rem 0 0; font-size:.86rem; overflow-wrap:anywhere }
+    .preserved { margin:1rem 0 0; padding:.7rem .8rem; border-left:3px solid var(--teal); background:rgba(50,107,98,.07); color:#244e48; font-size:.8rem }
+    .tabs { display:flex; overflow:auto; border-bottom:1px solid var(--line); padding:0 .7rem }
+    .tab { min-width:max-content; border:0; border-bottom:3px solid transparent; box-shadow:none!important; padding:.85rem 1rem; color:var(--muted); background:transparent }
+    .tab[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--marigold); background:rgba(197,138,40,.07) }
+    .tab:hover:not(:disabled) { transform:none; color:var(--ink) }
+    .panel { padding:clamp(1rem,3vw,2rem); min-height:410px }
+    .panel[hidden] { display:none }
+    .panel-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:1rem; margin-bottom:1.25rem }
+    .panel-heading p { color:var(--muted); margin:.25rem 0 0; font-size:.85rem; max-width:60ch }
+    .status-chip { display:inline-flex; align-items:center; min-height:26px; padding:.22rem .48rem; border:1px solid var(--line); font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.06em; background:#f5ecdd }
+    .status-chip.approved,.status-chip.ready,.status-chip.complete { color:var(--teal); border-color:var(--teal); background:#edf6f3 }
+    .status-chip.watched { color:var(--teal); border-color:var(--teal); background:#edf6f3 }
+    .status-chip.rejected,.status-chip.error { color:var(--oxblood); border-color:var(--oxblood); background:#faeeeb }
+    .decision-list { display:grid; gap:.9rem }
+    .decision { border:1px solid var(--line); border-left:4px solid var(--marigold); padding:1rem; background:rgba(255,255,255,.34) }
+    .decision.resolved { border-left-color:var(--teal) }
+    .decision-top { display:flex; justify-content:space-between; gap:1rem; align-items:flex-start }
+    .timecode { font:700 1rem var(--serif); letter-spacing:.025em }
+    .reason { margin:.45rem 0; font-size:.9rem }
+    .confidence { margin:0 0 .8rem; color:var(--muted); font-size:.76rem }
+    .decision-controls { display:grid; grid-template-columns:1fr auto auto; gap:.55rem }
+    .decision-controls input { min-width:0 }
+    .decision-controls .small-button { min-height:44px; min-width:88px; flex-shrink:0 }
+    .empty { border:1px dashed #b9a68b; padding:2rem 1.25rem; text-align:center; color:var(--muted); background:rgba(238,224,200,.25) }
+    .empty strong { color:var(--ink); font-family:var(--serif) }
+    .caption-editor { min-height:300px; font-family:Consolas,"Courier New",monospace; font-size:.82rem }
+    .guidance { padding:.8rem 1rem; background:#f4ead8; border-left:3px solid var(--marigold-dark); margin-bottom:1rem; font-size:.82rem }
+    .actions { display:flex; flex-wrap:wrap; gap:.7rem; align-items:center; margin-top:1rem }
+    .preview-grid { display:grid; grid-template-columns:1fr 1fr; gap:1rem }
+    .preview-card { border:1px solid var(--line); padding:1rem; background:rgba(255,255,255,.32) }
+    .video-stage { min-height:170px; display:grid; place-items:center; background:#211a17; color:#efe3cf; margin:.75rem 0; border:4px solid #3c302a }
+    .video-stage video { width:100%; max-height:280px; display:block }
+    .preview-links { display:flex; gap:.8rem; flex-wrap:wrap }
+    a { color:var(--marigold-dark); font-weight:700; text-underline-offset:3px }
+    .approval-box { border-top:1px solid var(--line); margin-top:1.4rem; padding-top:1.2rem }
+    .package-form { display:grid; gap:.85rem }
+    .package-items { margin:1.3rem 0 0; padding:0; list-style:none; border-top:1px solid var(--line) }
+    .package-items li { display:flex; justify-content:space-between; gap:1rem; padding:.7rem 0; border-bottom:1px solid var(--line) }
+    .inspector { position:sticky; top:1rem; border:1px solid #b9a58a; background:#ede0cc; box-shadow:5px 5px 0 rgba(128,84,20,.13) }
+    .inspector > summary { display:none }
+    .inspector-inner { padding:1.15rem }
+    .inspector h2 { font-size:1.25rem; margin-bottom:1rem }
+    .inspector-section { border-top:1px solid #cbb99f; padding:.9rem 0 }
+    .inspector-section:first-of-type { border-top:0; padding-top:0 }
+    .status-line { display:flex; align-items:center; justify-content:space-between; gap:1rem; margin:.5rem 0 }
+    .unresolved-number { font:700 2rem var(--serif); color:var(--oxblood) }
+    progress { width:100%; height:10px; border:0; background:#d8c7ad; accent-color:var(--teal) }
+    progress::-webkit-progress-bar { background:#d8c7ad }
+    progress::-webkit-progress-value { background:var(--teal) }
+    .job-row { display:flex; justify-content:space-between; gap:1rem; margin:.45rem 0; font-size:.78rem }
+    .path-list { margin:.5rem 0 0; padding:0; list-style:none; font-size:.75rem }
+    .path-list li { padding:.35rem 0; overflow-wrap:anywhere; border-bottom:1px dotted #c6b397 }
+    .checklist { margin:.5rem 0 0; padding:0; list-style:none; font-size:.78rem }
+    .checklist li { padding:.35rem 0 .35rem 1.4rem; position:relative }
+    .checklist li::before { content:"◇"; position:absolute; left:0; color:var(--marigold-dark); font-weight:900 }
+    .checklist li.ok::before { content:"✓"; color:var(--teal) }
+    .loading-skeleton { animation:pulse 1.4s ease-in-out infinite; background:linear-gradient(90deg,#eadcc6,#f8eedf,#eadcc6); background-size:200%; color:transparent!important }
+    .toast-region { position:fixed; right:1rem; bottom:1rem; z-index:10; display:grid; gap:.5rem; width:min(360px,calc(100vw - 2rem)); pointer-events:none }
+    .toast { padding:.85rem 1rem; color:#fff; background:var(--ink); box-shadow:0 8px 30px rgba(40,29,24,.28); border-left:5px solid var(--marigold); animation:toastIn .25s ease-out }
+    .toast.error { border-left-color:#e08373 }
+    .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0 }
+    [hidden] { display:none!important }
+    @keyframes pulse { 0%,100%{background-position:0}50%{background-position:100%} }
+    @keyframes toastIn { from{opacity:0;transform:translateY(12px)} }
+    @media (max-width:850px) {
+      .workspace { grid-template-columns:1fr }
+      .inspector { position:static }
+      .inspector > summary { display:block; cursor:pointer; padding:1rem; font:700 1rem var(--serif) }
+      .inspector[open] > summary { border-bottom:1px solid #cbb99f }
+      .project-summary { grid-template-columns:1fr }
+    }
+    @media (max-width:620px) {
+      .masthead { align-items:flex-start }
+      .brand { display:block }
+      .brand p { margin-top:.35rem }
+      .local-badge { font-size:.62rem; padding:.42rem .5rem; letter-spacing:.04em }
+      .story-ribbon { margin-inline:-1rem; padding-inline:.6rem; grid-template-columns:repeat(5,126px) }
+      .field-grid,.preview-grid { grid-template-columns:1fr }
+      .field.full,details.advanced { grid-column:auto }
+      .form-footer,.panel-heading { display:block }
+      .form-footer button,.panel-heading button { width:100%; margin-top:.8rem }
+      .summary-meta { grid-template-columns:1fr 1fr }
+      .decision-controls { grid-template-columns:1fr 1fr }
+      .decision-controls input { grid-column:1/-1 }
+      .decision-controls .small-button { width:100%; min-height:44px; flex-shrink:0 }
+      .tabs { padding:0 }
+      .tab { padding:.8rem }
+    }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important } }
+  </style>
+</head>
+<body>
+  <div class="topline"></div>
+  <header class="masthead">
+    <div class="brand"><h1>Nama Kadhai</h1><p>Local editing room</p></div>
+    <div id="localBadge" class="local-badge">Local &amp; offline</div>
+  </header>
+  <main>
+    <nav class="story-ribbon" aria-label="Editing workflow">
+      <button class="act active" data-stage="source"><span class="act-mark">I</span><strong>Source</strong><small>Bring it in</small></button>
+      <button class="act" data-stage="plan" disabled><span class="act-mark">II</span><strong>Plan</strong><small>Read the story</small></button>
+      <button class="act" data-stage="review" disabled><span class="act-mark">III</span><strong>Review</strong><small>You decide</small></button>
+      <button class="act" data-stage="preview" disabled><span class="act-mark">IV</span><strong>Preview</strong><small>Watch twice</small></button>
+      <button class="act" data-stage="publish" disabled><span class="act-mark">V</span><strong>Publish</strong><small>Pack it up</small></button>
+    </nav>
+
+    <section id="newProjectView" class="new-project" aria-labelledby="newProjectTitle">
+      <header>
+        <p class="eyebrow">Act I · The source</p>
+        <h2 id="newProjectTitle">Begin with the recording.</h2>
+        <p>The original stays untouched. Nama Kadhai will inspect it locally, then ask you to approve every suggested cut before any final render.</p>
+      </header>
+      <form id="projectForm" class="project-form">
+        <div class="field-grid">
+          <div class="field full"><label for="sourcePath">Video file path</label><input id="sourcePath" name="source_path" value="test001.mp4" required autocomplete="off"><p class="microcopy">A local path on this Windows computer.</p></div>
+          <div class="field"><label for="projectName">Project name</label><input id="projectName" name="project_name" value="Test story 001" required autocomplete="off"></div>
+          <div class="field"><label for="openingTitle">Opening title <span class="microcopy">(optional)</span></label><input id="openingTitle" name="title" placeholder="A title shown at the start"></div>
+          <div class="field full"><label for="captionsPath">Captions file <span class="microcopy">(optional · .srt or reviewed .json)</span></label><input id="captionsPath" name="captions_path" placeholder="e.g. subtitles.srt" autocomplete="off"><p class="microcopy">With an .srt, every word is timed to your speech automatically (about a minute). Its timestamps are ignored; the text must match what you say, in English letters.</p></div>
+          <details class="advanced">
+            <summary>Editing choices</summary>
+            <div class="field-grid advanced-grid">
+              <div class="field full"><label for="musicPath">Music file path <span class="microcopy">(optional)</span></label><input id="musicPath" name="music_path" autocomplete="off"></div>
+              <div class="field"><label for="intensity">Editing intensity</label><select id="intensity" name="editing_intensity"><option value="subtle">Subtle — keep the pauses</option><option value="balanced" selected>Balanced — shape the pace</option><option value="dynamic">Dynamic — tighter delivery</option></select></div>
+              <div class="field"><span class="label">Vertical crop position</span><div class="range-row"><input id="cropX" name="crop_x" type="range" min="0" max="100" value="50" aria-label="Vertical crop horizontal position"><output id="cropValue" for="cropX">50%</output></div></div>
+              <label class="switch-row full"><input id="captionsEnabled" name="captions_enabled" type="checkbox" checked> Include reviewed captions when available</label>
+            </div>
+          </details>
+        </div>
+        <div class="form-footer"><p class="microcopy">Nothing is published automatically.</p><button id="analyseButton" class="accent" type="submit">Analyse recording →</button></div>
+      </form>
+    </section>
+
+    <section id="workspace" class="workspace" hidden aria-label="Project workspace">
+      <article class="main-sheet">
+        <header class="project-summary">
+          <div><p class="eyebrow">Current story</p><h2 id="summaryName">Untitled project</h2><p id="summarySource" class="microcopy">No source details yet</p><p class="preserved">✓ Your original recording is preserved. Every edit creates a new output.</p></div>
+          <dl id="summaryMeta" class="summary-meta"></dl>
+        </header>
+        <div class="tabs" role="tablist" aria-label="Project review sections">
+          <button class="tab" id="tab-decisions" role="tab" aria-selected="true" aria-controls="panel-decisions" data-tab="decisions">Decisions</button>
+          <button class="tab" id="tab-captions" role="tab" aria-selected="false" aria-controls="panel-captions" data-tab="captions">Captions</button>
+          <button class="tab" id="tab-previews" role="tab" aria-selected="false" aria-controls="panel-previews" data-tab="previews">Previews</button>
+          <button class="tab" id="tab-package" role="tab" aria-selected="false" aria-controls="panel-package" data-tab="package">Package</button>
+        </div>
+        <section id="panel-decisions" class="panel" role="tabpanel" aria-labelledby="tab-decisions">
+          <div class="panel-heading"><div><p class="eyebrow">Act III · Your judgment</p><h3>Suggested story decisions</h3><p>Suggestions stay visibly uncertain until you approve or reject them. Add context whenever the editor has missed the meaning.</p></div><button id="retainAllButton" class="quiet small-button" type="button">Reject all cuts · retain footage</button></div>
+          <div id="decisionList" class="decision-list"></div>
+        </section>
+        <section id="panel-captions" class="panel" role="tabpanel" aria-labelledby="tab-captions" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">Words, reviewed by you</p><h3>Caption revision</h3><p>Paste a JSON array of timed captions. Nama Kadhai does not assume transcription is enabled.</p></div></div>
+          <div id="alignmentSummary" class="guidance" hidden></div>
+          <div class="guidance"><strong>[VERIFY]</strong> marks any word or timing that still needs a human check. Remove the marker only after listening to the source.</div>
+          <label for="captionJson">Reviewed captions JSON</label>
+          <textarea id="captionJson" class="caption-editor" spellcheck="false" placeholder='[{"start": 0.0, "end": 2.4, "text": "[VERIFY] Vanakkam..."}]'></textarea>
+          <div class="actions"><button id="saveCaptionsButton" class="primary" type="button">Save as new revision</button><span id="captionState" class="microcopy">No saved revision shown.</span></div>
+        </section>
+        <section id="panel-previews" class="panel" role="tabpanel" aria-labelledby="tab-previews" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">Act IV · Watch twice</p><h3>Landscape &amp; vertical previews</h3><p>Both formats must exist before final approval. Rendering may take time; this page will keep you updated.</p></div><button id="renderButton" class="accent" type="button">Render both previews</button></div>
+          <div id="previewGrid" class="preview-grid"></div>
+          <div class="approval-box"><div class="field"><label for="finalNote">Final approval note</label><textarea id="finalNote" rows="3" required placeholder="What did you check before approving?"></textarea></div><div class="actions"><button id="finalizeButton" class="primary" type="button" disabled>Approve final edit</button><span id="finalizeHint" class="microcopy">Resolve every decision, watch both previews, and add an approval note.</span></div></div>
+        </section>
+        <section id="panel-package" class="panel" role="tabpanel" aria-labelledby="tab-package" hidden>
+          <div class="panel-heading"><div><p class="eyebrow">Act V · Ready for the world</p><h3>Publishing package</h3><p>Prepare the useful words and files together. Nothing is posted for you.</p></div></div>
+          <div class="package-form">
+            <div class="field"><label for="packageTitle">Title</label><input id="packageTitle"></div>
+            <div class="field"><label for="packageDescription">Description</label><textarea id="packageDescription" rows="4"></textarea></div>
+            <div class="field"><label for="packageHashtags">Hashtags</label><input id="packageHashtags" placeholder="#TamilStories #NamaKadhai"></div>
+            <div class="field"><label for="socialCaption">Social caption</label><textarea id="socialCaption" rows="3"></textarea></div>
+            <div class="field"><label for="pinnedComment">Pinned comment</label><input id="pinnedComment"></div>
+          </div>
+          <div class="actions"><button id="packageButton" class="accent" type="button">Build publishing package</button></div>
+          <ul id="packageItems" class="package-items"></ul>
+        </section>
+      </article>
+
+      <details id="inspector" class="inspector" open>
+        <summary>Project status &amp; safety</summary>
+        <div class="inspector-inner">
+          <p class="eyebrow">At a glance</p><h2>Cutting-room notes</h2>
+          <section class="inspector-section"><div class="status-line"><span class="label">Current status</span><span id="projectState" class="status-chip">New</span></div><div class="status-line"><span class="label">Unresolved choices</span><strong id="unresolvedCount" class="unresolved-number">0</strong></div></section>
+          <section class="inspector-section"><h3>Latest render job</h3><div id="jobEmpty" class="microcopy">No render attempt recorded.</div><div id="jobDetails" hidden><progress id="jobProgress" max="100" value="0"></progress><div class="job-row"><span id="jobStage">Preparing</span><strong id="jobPercent">0%</strong></div><button id="cancelJobButton" class="danger small-button" type="button">Cancel render</button><button id="retryJobButton" class="small-button" type="button" hidden>Retry as a new attempt</button><p id="jobError" class="microcopy"></p></div></section>
+          <section class="inspector-section"><h3>Output paths</h3><ul id="pathList" class="path-list"><li>Paths will appear after analysis.</li></ul></section>
+          <section class="inspector-section"><h3>Safety check</h3><ul class="checklist"><li class="ok">Original file remains unchanged</li><li id="checkDecisions">Suggestions will be reviewed here</li><li id="checkPreviews">Watch both preview formats</li><li id="checkFinal">Final approval recorded</li><li>Publishing always stays manual</li></ul></section>
+        </div>
+      </details>
+    </section>
+  </main>
+  <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="false"></div>
+
+  <script>
+  (function () {
+    "use strict";
+    var state = { project:null, activeJob:null, pollTimer:null, health:null, busy:false, drafts:{projectId:"",captionJson:"",captionDirty:false,decisionNotes:{}} };
+    var byId = function (id) { return document.getElementById(id); };
+    var els = {
+      newView:byId("newProjectView"), workspace:byId("workspace"), form:byId("projectForm"), analyse:byId("analyseButton"),
+      crop:byId("cropX"), cropValue:byId("cropValue"), badge:byId("localBadge"), decisionList:byId("decisionList"),
+      previewGrid:byId("previewGrid"), captionJson:byId("captionJson"), packageItems:byId("packageItems"), toast:byId("toastRegion")
+    };
+
+    function safeArray(value) { return Array.isArray(value) ? value : []; }
+    function pick(obj, keys, fallback) { for (var i=0;i<keys.length;i++) { if (obj && obj[keys[i]] !== undefined && obj[keys[i]] !== null) return obj[keys[i]]; } return fallback; }
+    function textNode(tag, value, className) { var node=document.createElement(tag); if(className) node.className=className; node.textContent=String(value === undefined || value === null ? "" : value); return node; }
+    function button(label, className, handler) { var node=textNode("button",label,className||""); node.type="button"; node.addEventListener("click",handler); return node; }
+    function clear(node) { while(node.firstChild) node.removeChild(node.firstChild); }
+    function toast(message, kind) { var node=textNode("div",message,"toast"+(kind?" "+kind:"")); node.setAttribute("role",kind==="error"?"alert":"status"); els.toast.appendChild(node); window.setTimeout(function(){ if(node.parentNode) node.parentNode.removeChild(node); },5200); }
+    function setBusy(control, busy, busyLabel) { if(!control) return; if(busy){ control.dataset.label=control.textContent; control.textContent=busyLabel||"Working…"; control.disabled=true; } else { control.textContent=control.dataset.label||control.textContent; control.disabled=false; } }
+    function formatError(error) { return error && error.message ? error.message : "Something went wrong. Please try again."; }
+    async function api(path, options) {
+      var config=options||{}; config.headers=Object.assign({"Accept":"application/json"},config.headers||{});
+      if(config.body && typeof config.body!=="string") { config.headers["Content-Type"]="application/json"; config.body=JSON.stringify(config.body); }
+      var response;
+      try { response=await fetch(path,config); } catch(error) { throw new Error("The local editing service could not be reached."); }
+      var data={}; try { data=await response.json(); } catch(error) { if(!response.ok) throw new Error("The local service returned an unreadable response."); }
+      if(!response.ok) { var message=pick(data,["message","error","detail"],"Request failed ("+response.status+")."); if(typeof message!=="string") message=JSON.stringify(message); var err=new Error(message); err.status=response.status; throw err; }
+      return data;
+    }
+    async function loadHealth() {
+      try { var data=await api("/api/health"); state.health=data; els.badge.textContent=data.offline_core===false?"Local service":"Local & offline"; els.badge.classList.toggle("warn",!data.ok); els.badge.title=data.transcription_enabled?"A caption provider is enabled; all captions still require review.":"Offline core ready. Captions are manual/reviewed."; }
+      catch(error) { els.badge.textContent="Service unavailable"; els.badge.classList.add("warn"); els.badge.title=formatError(error); }
+    }
+    async function loadRecentProject() {
+      try { var data=await api("/api/projects"); var projects=safeArray(data.projects); if(projects.length && location.hash.slice(1)) { var wanted=projects.find(function(p){return String(p.project_id||p.id)===location.hash.slice(1);}); if(wanted) await loadProject(wanted.project_id||wanted.id); } }
+      catch(error) { /* Empty state remains useful when the server is still starting. */ }
+    }
+    function decisionItems(project) {
+      var plan=project&&project.plan&&typeof project.plan==="object"?project.plan:{}, decisions=project&&project.decisions;
+      var items=safeArray(plan.candidates).map(function(candidate) {
+        var id=pick(candidate,["candidate_id","item_id","id"],"");
+        return Object.assign({},candidate,{item_id:id,status:(decisions&&decisions[id])||candidate.status||"PENDING"});
+      });
+      ["captions","title","music"].forEach(function(key) {
+        var planned=plan[key]; if(!planned)return;
+        var id=key, description=key==="captions"?"Reviewed caption cues":key==="title"?"Opening title":"Background music";
+        if(key==="captions"&&planned.cue_count!==undefined) description+=" · "+planned.cue_count+" cues";
+        if(key==="title"&&planned.text) description+=" · “"+planned.text+"”";
+        if(key==="music"&&planned.path) description+=" · "+String(planned.path).split(/[\\/]/).pop();
+        items.push({item_id:id,label:description,reason:description,status:(decisions&&decisions[id])||planned.status||"PENDING"});
+      });
+      if(Array.isArray(decisions)) return decisions;
+      return items;
+    }
+    function stageFor(project) {
+      var projectState=String(pick(project,["state","status"],"review")).toLowerCase();
+      if(projectState.indexOf("package")>=0 || project.package) return "publish";
+      if(projectState.indexOf("final")>=0 || projectState.indexOf("approv")>=0) return "publish";
+      if(hasBothPreviews(project) || project.active_job) return "preview";
+      if(decisionItems(project).length) return "review";
+      return "plan";
+    }
+    function updateRibbon(project) {
+      var order=["source","plan","review","preview","publish"], current=project?stageFor(project):"source", currentIndex=order.indexOf(current);
+      document.querySelectorAll(".act").forEach(function(node,index){ node.disabled=!project && index>0; node.classList.toggle("active",index===currentIndex); node.classList.toggle("done",index<currentIndex); var mark=node.querySelector(".act-mark"); mark.textContent=index<currentIndex?"✓":String(index+1); });
+    }
+    function sourceData(project) { return project && project.source && typeof project.source==="object" ? project.source : {}; }
+    function sourceMetadata(project) { var source=sourceData(project); return source.metadata&&typeof source.metadata==="object"?source.metadata:source; }
+    function formatDuration(raw) { var n=Number(raw); if(!isFinite(n)) return raw||"—"; var m=Math.floor(n/60),s=Math.floor(n%60); return m+":"+String(s).padStart(2,"0"); }
+    function renderSummary(project) {
+      var source=sourceData(project), metadata=sourceMetadata(project), video=metadata.video&&typeof metadata.video==="object"?metadata.video:{}, audio=metadata.audio&&typeof metadata.audio==="object"?metadata.audio:null;
+      var name=pick(project,["name","project_name","title"],"Untitled story"), filename=pick(metadata,["file_name","filename","name"],pick(source,["filename","name","path"],pick(project,["source_path"],"Source file")));
+      byId("summaryName").textContent=name; byId("summarySource").textContent=filename;
+      var meta=byId("summaryMeta"); clear(meta);
+      var dimensions=video.width&&video.height?video.width+" × "+video.height:pick(metadata,["dimensions","resolution"],"—");
+      var sha=pick(source,["sha256","sha_256","hash"],pick(project,["sha256"],"—")); if(sha!=="—"&&String(sha).length>18) sha=String(sha).slice(0,10)+"…"+String(sha).slice(-7);
+      var codecs=[video.codec,audio&&audio.codec].filter(Boolean).join(" / ")||pick(metadata,["codecs","codec"],"—");
+      [["Duration",formatDuration(pick(metadata,["duration_seconds","duration"],pick(source,["duration_seconds"],"—")))],["Frame",dimensions],["Rate",pick(video,["frame_rate","fps"],pick(metadata,["frame_rate","fps"],"—"))],["Codecs",codecs],["Container",pick(metadata,["format_name","format"],"—")],["File size",metadata.file_size_bytes?Math.round(Number(metadata.file_size_bytes)/1048576*10)/10+" MB":"—"],["SHA-256",sha]].forEach(function(item){ var wrap=document.createElement("div"); wrap.appendChild(textNode("dt",item[0])); wrap.appendChild(textNode("dd",typeof item[1]==="object"?JSON.stringify(item[1]):item[1])); meta.appendChild(wrap); });
+    }
+    function decisionId(item,index) { return pick(item,["item_id","candidate_id","id","decision_id"],String(index)); }
+    function decisionStatus(item) { return String(pick(item,["status"],"unresolved")).toLowerCase(); }
+    function unresolved(project) {
+      var provided=project&&project.unresolved;
+      if(Array.isArray(provided)) return provided.length;
+      if(provided!==undefined&&provided!==null&&isFinite(Number(provided))) return Number(provided);
+      return decisionItems(project).filter(function(item){ var s=decisionStatus(item); return s!=="approved"&&s!=="rejected"; }).length;
+    }
+    function timecode(raw) { var value=Number(raw); if(!isFinite(value))return String(raw===undefined?"?":raw); var minutes=Math.floor(value/60),seconds=(value%60).toFixed(3); return String(minutes).padStart(2,"0")+":"+seconds.padStart(6,"0"); }
+    function decisionTimes(item) {
+      var proposed=item&&item.proposed_cut_seconds;
+      if(Array.isArray(proposed)&&proposed.length===2) return timecode(proposed[0])+" — "+timecode(proposed[1]);
+      if(item&&item.label)return item.label;
+      return String(pick(item,["start","start_time","in"],"?"))+" — "+String(pick(item,["end","end_time","out"],"?"));
+    }
+    function renderDecisions(project) {
+      clear(els.decisionList); var decisions=decisionItems(project);
+      if(!decisions.length){ var empty=textNode("div","","empty"); empty.appendChild(textNode("strong","No suggested cuts yet.")); empty.appendChild(document.createElement("br")); empty.appendChild(document.createTextNode("Analysis results will appear here without hiding uncertainty.")); els.decisionList.appendChild(empty); byId("retainAllButton").disabled=true; return; }
+      byId("retainAllButton").disabled=!decisions.some(function(item){return decisionStatus(item)==="pending"||decisionStatus(item)==="unresolved";});
+      decisions.forEach(function(item,index){
+        var card=document.createElement("article"), top=document.createElement("div"), status=decisionStatus(item), controls=document.createElement("div"), note=document.createElement("input"), itemId=String(decisionId(item,index));
+        card.className="decision"+(status!=="unresolved"&&status!=="pending"?" resolved":""); top.className="decision-top";
+        top.appendChild(textNode("div",decisionTimes(item),"timecode")); top.appendChild(textNode("span",status,"status-chip "+status)); card.appendChild(top);
+        card.appendChild(textNode("p",pick(item,["reason","measured_evidence","description","suggestion","label"],"Review this proposed change against the recording."),"reason"));
+        var rangeText=item.source_start_seconds!==undefined&&item.source_end_seconds!==undefined?"Quiet interval "+timecode(item.source_start_seconds)+" — "+timecode(item.source_end_seconds):"";
+        if(rangeText) card.appendChild(textNode("p",rangeText,"microcopy"));
+        var confidence=pick(item,["confidence_category","confidence","certainty"],null), uncertainty=pick(item,["limitations_and_review_notes","confidence_explanation","uncertainty","warning"],null);
+        var confidenceText=confidence!==null?"Signal confidence: "+confidence:""; if(uncertainty) confidenceText+=(confidenceText?" · ":"")+uncertainty; if(confidenceText) card.appendChild(textNode("p",confidenceText,"confidence"));
+        controls.className="decision-controls"; note.type="text"; note.placeholder="Add a note (optional)"; note.dataset.decisionId=itemId; note.value=Object.prototype.hasOwnProperty.call(state.drafts.decisionNotes,itemId)?state.drafts.decisionNotes[itemId]:pick(item,["note"],""); note.setAttribute("aria-label","Note for decision "+(index+1)); note.addEventListener("input",function(){state.drafts.decisionNotes[itemId]=note.value;}); controls.appendChild(note);
+        var approve=button("Approve","small-button",function(){saveDecision(itemId,"approved",note.value,approve,reject);});
+        var reject=button("Reject","small-button danger",function(){saveDecision(itemId,"rejected",note.value,reject,approve);}); controls.appendChild(approve); controls.appendChild(reject); card.appendChild(controls); els.decisionList.appendChild(card);
+      });
+    }
+    async function saveDecision(id,status,note,control,sibling) {
+      setBusy(control,true,"Saving…"); if(sibling) sibling.disabled=true;
+      try { var data=await api("/api/projects/"+encodeURIComponent(projectId())+"/decisions",{method:"POST",body:{item_id:id,status:status,note:note}}); delete state.drafts.decisionNotes[String(id)]; setProject(data.project||data); toast("Decision saved."); }
+      catch(error){ toast(formatError(error),"error"); setBusy(control,false); if(sibling)sibling.disabled=false; }
+    }
+    function captionsFrom(project) { var captions=pick(project,["captions","caption_revision"],[]); if(captions&&captions.items) captions=captions.items; return safeArray(captions); }
+    function renderCaptions(project) { var captions=captionsFrom(project); els.captionJson.value=state.drafts.captionDirty?state.drafts.captionJson:(captions.length?JSON.stringify(captions,null,2):""); byId("captionState").textContent=state.drafts.captionDirty?"Unsaved caption draft preserved.":captions.length?captions.length+" reviewed caption entries loaded.":"No saved revision shown."; renderAlignment(project); }
+    function renderAlignment(project) { var box=byId("alignmentSummary"), report=project&&project.caption_alignment; if(!report){box.hidden=true;return;} var low=safeArray(report.low_confidence_words); box.hidden=false; box.textContent="Captions were timed word-by-word to your voice: "+report.aligned_word_count+" words, average confidence "+Number(report.mean_word_confidence).toFixed(2)+"."+(low.length?" Check these spots, where the text may not match what was said: "+low.join(", ")+".":" Every word matched well."); }
+    function outputInfo(project) { return project&&project.outputs!==undefined?project.outputs:[]; }
+    function outputUrl(value) { var raw=typeof value==="string"?value:(value&&pick(value,["url","media_url","download_url","path"],"")); if(!raw)return ""; try{var parsed=new URL(String(raw),location.href); return parsed.origin===location.origin?parsed.href:"";}catch(error){return "";} }
+    function findOutput(outputs,kind) {
+      if(Array.isArray(outputs)) return outputs.find(function(item){return String(item&&item.format||"").toLowerCase()===kind;})||null;
+      return pick(outputs,kind==="landscape"?["landscape","preview_landscape","landscape_preview"]:["vertical","preview_vertical","vertical_preview"],null);
+    }
+    function hasBothPreviews(project) { var outputs=outputInfo(project); return Boolean(outputUrl(findOutput(outputs,"landscape"))&&outputUrl(findOutput(outputs,"vertical"))); }
+    function previewWasReviewed(project,kind) {
+      var item=findOutput(outputInfo(project),kind), reviews=project&&project.preview_reviews, review=reviews&&reviews[kind];
+      return Boolean(outputUrl(item)&&review&&typeof review.output_sha256==="string"&&review.output_sha256.length===64);
+    }
+    function hasBothPreviewsReviewed(project) { return previewWasReviewed(project,"landscape")&&previewWasReviewed(project,"vertical"); }
+    function updateRenderButton(project) {
+      var ready=hasBothPreviews(project), job=project&&(project.active_job||state.activeJob);
+      var running=job&&/queued|running|cancel_pending/i.test(String(job.status||""));
+      byId("renderButton").disabled=unresolved(project)!==0||ready||Boolean(running);
+      byId("renderButton").textContent=ready?"Previews already rendered":"Render both previews";
+    }
+    function playedThroughPreview(video) {
+      if(!isFinite(video.duration)||video.duration<=0||video.currentTime<video.duration-.25) return false;
+      var covered=0,startedAtBeginning=false;
+      for(var index=0;index<video.played.length;index++){
+        var start=video.played.start(index),end=video.played.end(index);
+        if(start<=.5) startedAtBeginning=true;
+        covered+=Math.max(0,Math.min(video.duration,end)-Math.max(0,start));
+      }
+      return startedAtBeginning&&covered>=video.duration*.95;
+    }
+    async function recordPreviewReview(kind,video) {
+      if(!playedThroughPreview(video)){video.currentTime=0;toast("Play this preview from the beginning through to the end to record your review.");return;}
+      if(video.dataset.reviewState==="saving"||video.dataset.reviewState==="saved")return;
+      video.dataset.reviewState="saving";
+      try{
+        var data=await api("/api/projects/"+encodeURIComponent(projectId())+"/previews/review",{method:"POST",body:{format:kind}});
+        video.dataset.reviewState="saved";setProject(data.project||data);toast((kind==="landscape"?"Landscape":"Vertical")+" preview review recorded.");
+      }catch(error){video.dataset.reviewState="";toast(formatError(error),"error");}
+    }
+    function renderApprovalControls(project) {
+      var allResolved=unresolved(project)===0, bothRendered=hasBothPreviews(project), bothReviewed=hasBothPreviewsReviewed(project), noteReady=byId("finalNote").value.trim().length>0, attempt=project&&project.active_job, attemptReady=!attempt||attempt.status==="succeeded";
+      updateRenderButton(project);
+      byId("finalizeButton").disabled=!(allResolved&&bothRendered&&bothReviewed&&noteReady&&attemptReady);
+      byId("finalizeHint").textContent=!allResolved?"Resolve every creative decision before approval.":!bothRendered?"Render both preview formats before approval.":!bothReviewed?"Watch both previews from the beginning through to the end.":!attemptReady?"The latest render attempt must succeed before approval.":!noteReady?"Add a final approval note after reviewing the previews.":"Both previews were watched. Record your final check to approve.";
+    }
+    function renderPreviews(project) {
+      clear(els.previewGrid); var outputs=outputInfo(project);
+      ["landscape","vertical"].forEach(function(kind){ var item=findOutput(outputs,kind), url=outputUrl(item), reviewed=previewWasReviewed(project,kind), card=document.createElement("article"); card.className="preview-card"; card.appendChild(textNode("span",url?(reviewed?"Watched":"Ready"):"Not rendered","status-chip "+(reviewed?"watched":url?"ready":""))); card.appendChild(textNode("h3",kind==="landscape"?"Landscape · 16:9":"Vertical · 9:16")); var stage=document.createElement("div"); stage.className="video-stage";
+        if(url){ var video=document.createElement("video"); video.controls=true; video.preload="metadata"; video.src=url; video.addEventListener("ended",function(){recordPreviewReview(kind,video);}); stage.appendChild(video); } else stage.appendChild(textNode("span","Preview will appear here after rendering.")); card.appendChild(stage);
+        if(url) card.appendChild(textNode("p",reviewed?"Playback review recorded.":"Play from the beginning through to the end to record review.","microcopy"));
+        if(item&&url){ var details=[]; if(Array.isArray(item.dimensions))details.push(item.dimensions.join(" × ")); if(item.duration_seconds!==undefined)details.push(formatDuration(item.duration_seconds)); if(item.captions)details.push("Captions: "+item.captions); if(details.length)card.appendChild(textNode("p",details.join(" · "),"microcopy")); }
+        if(url){ var links=document.createElement("div"); links.className="preview-links"; var open=textNode("a","Open preview"); open.href=url; open.target="_blank"; open.rel="noopener"; var download=textNode("a","Download"); download.href=url; download.download=""; links.appendChild(open); links.appendChild(download); card.appendChild(links); }
+        els.previewGrid.appendChild(card); });
+      renderApprovalControls(project);
+    }
+    function packageData(project) { return project&&project.package&&typeof project.package==="object"?project.package:{}; }
+    function setMetadataFields(project) { var pkg=packageData(project), values={packageTitle:pick(pkg,["title"],pick(project,["title","name"],"")),packageDescription:pick(pkg,["description"],""),packageHashtags:pick(pkg,["hashtags"],""),socialCaption:pick(pkg,["social_caption"],""),pinnedComment:pick(pkg,["pinned_comment"],"")}; Object.keys(values).forEach(function(id){ var el=byId(id); if(el&&!el.dataset.touched) el.value=Array.isArray(values[id])?values[id].join(" "):values[id]; }); }
+    function isFinalized(project) { return /final|approv|package|complete/i.test(String(pick(project,["state","status"],""))); }
+    function renderPackage(project) {
+      clear(els.packageItems); var pkg=packageData(project), items=pick(pkg,["items","files","outputs"],[]), urls=safeArray(pkg.file_urls);
+      if(!Array.isArray(items)&&items&&typeof items==="object") items=Object.keys(items).map(function(key){return {name:key,url:outputUrl(items[key])};});
+      safeArray(items).forEach(function(item,index){
+        var li=document.createElement("li"), raw=typeof item==="string"?item:pick(item,["name","label","filename","path"],"Package item "+(index+1));
+        var name=String(raw).split(/[\\/]/).pop(), url=(typeof item==="string"?outputUrl(urls[index]):outputUrl(pick(item,["url","media_url","download_url"],urls[index])));
+        li.appendChild(textNode("span",name)); if(url){var link=textNode("a","Open");link.href=url;link.target="_blank";link.rel="noopener";li.appendChild(link);} els.packageItems.appendChild(li);
+      });
+      if(!els.packageItems.children.length) els.packageItems.appendChild(textNode("li","The package contents will appear here after you build it.","microcopy"));
+      byId("packageButton").disabled=!isFinalized(project); setMetadataFields(project);
+    }
+    function renderInspector(project) {
+      var count=unresolved(project), pstate=String(pick(project,["state","status"],"review")); byId("projectState").textContent=pstate; byId("projectState").className="status-chip "+pstate.toLowerCase(); byId("unresolvedCount").textContent=String(count);
+      var decisionCount=decisionItems(project).length, decisionCheck=byId("checkDecisions"), previewCheck=byId("checkPreviews"), previewsReady=hasBothPreviews(project), previewsReviewed=hasBothPreviewsReviewed(project);
+      decisionCheck.textContent=decisionCount===0?"No suggestions generated; nothing to review.":count===0?"All generated suggestions reviewed":"Review all generated suggestions";
+      decisionCheck.classList.toggle("ok",count===0);
+      previewCheck.textContent=!previewsReady?"Both preview formats not rendered":previewsReviewed?"Both previews watched through to the end":"Watch both previews through to the end";
+      previewCheck.classList.toggle("ok",previewsReviewed); byId("checkFinal").classList.toggle("ok",isFinalized(project));
+      var paths=project.paths&&typeof project.paths==="object"?project.paths:{}, list=byId("pathList"); clear(list);
+      function addPath(label,path){ if(!path)return; var li=document.createElement("li"); li.appendChild(textNode("strong",label+": ")); li.appendChild(document.createTextNode(String(path))); list.appendChild(li); }
+      Object.keys(paths).forEach(function(key){addPath(key,paths[key]);});
+      safeArray(outputInfo(project)).forEach(function(output){var format=String(output&&output.format||"output");addPath(format+" preview",output&&output.path);addPath(format+" render report",output&&output.render_report);});
+      var finalExports=project.finalization&&project.finalization.final_exports; if(finalExports&&typeof finalExports==="object")Object.keys(finalExports).forEach(function(key){addPath("Final "+key,finalExports[key]);});
+      var pkg=packageData(project); addPath("Package directory",pkg.directory); addPath("Package manifest",pkg.manifest);
+      safeArray(pkg.files).forEach(function(path,index){addPath("Package file "+(index+1),path);});
+      if(!list.children.length) list.appendChild(textNode("li","No output paths reported yet."));
+      renderJob(project.active_job||state.activeJob);
+    }
+    function renderJob(job) {
+      var active=job&&typeof job==="object"; byId("jobEmpty").hidden=active; byId("jobDetails").hidden=!active; if(!active)return;
+      state.activeJob=job; var status=String(job.status||""); var raw=Number(pick(job,["progress","percent"],0)); var percent=raw<=1?Math.round(raw*100):Math.round(raw); percent=Math.max(0,Math.min(100,percent)); byId("jobProgress").value=percent; byId("jobPercent").textContent=percent+"%"; byId("jobStage").textContent=pick(job,["stage","status"],"Working"); byId("jobError").textContent=pick(job,["error","message"],""); byId("cancelJobButton").disabled=!/queued|running/i.test(status); byId("retryJobButton").hidden=!/^(interrupted|failed|cancelled)$/.test(status); if(state.project)renderApprovalControls(state.project);
+    }
+    function projectId() { return pick(state.project,["project_id","id"],""); }
+    function setProject(project) {
+      if(!project||typeof project!=="object") return; var incomingId=String(pick(project,["project_id","id"],"")); if(state.drafts.projectId&&incomingId&&state.drafts.projectId!==incomingId) state.drafts={projectId:incomingId,captionJson:"",captionDirty:false,decisionNotes:{}}; else if(!state.drafts.projectId) state.drafts.projectId=incomingId; state.project=project; els.newView.hidden=true; els.workspace.hidden=false; var id=projectId(); if(id) location.hash=encodeURIComponent(id);
+      renderSummary(project); renderDecisions(project); renderCaptions(project); renderPreviews(project); renderPackage(project); renderInspector(project); updateRibbon(project);
+      var job=project.active_job; if(job&&/queued|running/i.test(String(job.status||""))) startPolling(pick(job,["job_id","id"],""));
+    }
+    async function loadProject(id) { try{ var data=await api("/api/projects/"+encodeURIComponent(id)); setProject(data.project||data); }catch(error){toast(formatError(error),"error");} }
+    async function createProject(event) {
+      event.preventDefault(); var srt=/\.srt$/i.test(byId("captionsPath").value.trim()); setBusy(els.analyse,true,srt?"Analysing and timing captions to your voice…":"Analysing locally…");
+      var body={source_path:byId("sourcePath").value.trim(),project_name:byId("projectName").value.trim(),title:byId("openingTitle").value.trim(),captions_path:byId("captionsPath").value.trim(),music_path:byId("musicPath").value.trim(),crop_x:Number(els.crop.value)/100,editing_intensity:byId("intensity").value,captions_enabled:byId("captionsEnabled").checked};
+      try { var data=await api("/api/projects",{method:"POST",body:body}); setProject(data.project||data); toast("Analysis complete. Review each suggestion in your own time."); }
+      catch(error){ toast(formatError(error),"error"); }
+      finally { setBusy(els.analyse,false); }
+    }
+    async function saveCaptions() { var control=byId("saveCaptionsButton"), captions; try{captions=JSON.parse(els.captionJson.value||"[]");if(!Array.isArray(captions))throw new Error("Captions JSON must be an array.");}catch(error){toast("Caption JSON needs attention: "+formatError(error),"error");return;} setBusy(control,true,"Saving revision…"); try{var data=await api("/api/projects/"+encodeURIComponent(projectId())+"/captions/revise",{method:"POST",body:{captions:captions,reviewed:true}});state.drafts.captionDirty=false;state.drafts.captionJson="";setProject(data.project||data);toast("Reviewed captions saved as a new revision.");}catch(error){toast(formatError(error),"error");}finally{setBusy(control,false);} }
+    async function renderProject() { var control=byId("renderButton"); setBusy(control,true,"Starting render…"); try{var data=await api("/api/projects/"+encodeURIComponent(projectId())+"/render",{method:"POST",body:{}});state.activeJob=data.job||data;renderJob(state.activeJob);toast("Render started. You can keep this page open while it works.");startPolling(pick(state.activeJob,["job_id","id"],""));}catch(error){toast(formatError(error),"error");}finally{setBusy(control,false);if(state.project)updateRenderButton(state.project);} }
+    function startPolling(jobId) { if(!jobId)return; if(state.pollTimer)window.clearTimeout(state.pollTimer); async function poll(){try{var data=await api("/api/jobs/"+encodeURIComponent(jobId));var job=data.job||data;state.activeJob=job;renderJob(job);if(/queued|running|cancel_pending/i.test(String(job.status||""))){state.pollTimer=window.setTimeout(poll,1800);}else{state.pollTimer=null;if(/^(succeeded|completed|complete|done)$/.test(String(job.status||""))){toast("Both previews finished rendering and validated.");await loadProject(projectId());}else if(/^(interrupted|failed|cancelled)$/.test(String(job.status||""))){toast(pick(job,["error","message"],"The render did not finish."),"error");await loadProject(projectId());}}}catch(error){toast(formatError(error),"error");state.pollTimer=window.setTimeout(poll,3500);}} poll(); }
+    async function cancelJob() { var id=pick(state.activeJob,["job_id","id"],""); if(!id)return; var control=byId("cancelJobButton"); setBusy(control,true,"Cancelling…"); try{var data=await api("/api/jobs/"+encodeURIComponent(id)+"/cancel",{method:"POST"});state.activeJob=data.job||data;toast("Render cancelled. Existing files were left in place.");}catch(error){toast(formatError(error),"error");}finally{setBusy(control,false);renderJob(state.activeJob);} }
+    async function retryJob() { var id=pick(state.activeJob,["job_id","id"],""); if(!id)return; var control=byId("retryJobButton"); setBusy(control,true,"Starting safe retry…"); try{var data=await api("/api/jobs/"+encodeURIComponent(id)+"/retry",{method:"POST",body:{}});state.activeJob=data.job||data;renderJob(state.activeJob);toast("Retry started with a new attempt folder; earlier outputs are preserved.");startPolling(pick(state.activeJob,["job_id","id"],""));}catch(error){toast(formatError(error),"error");}finally{setBusy(control,false);renderJob(state.activeJob);} }
+    async function finalize() { var control=byId("finalizeButton"),note=byId("finalNote").value.trim(); if(unresolved(state.project)>0||!hasBothPreviews(state.project)||!hasBothPreviewsReviewed(state.project)||!note)return; setBusy(control,true,"Recording approval…"); try{var data=await api("/api/projects/"+encodeURIComponent(projectId())+"/finalize",{method:"POST",body:{note:note}});setProject(data.project||data);toast("Final approval recorded.");}catch(error){toast(error.status===409?"Final approval is still blocked: "+formatError(error):formatError(error),"error");}finally{setBusy(control,false);} }
+    async function buildPackage() { var control=byId("packageButton"); setBusy(control,true,"Building package…"); var body={title:byId("packageTitle").value,description:byId("packageDescription").value,hashtags:byId("packageHashtags").value,social_caption:byId("socialCaption").value,pinned_comment:byId("pinnedComment").value}; try{var data=await api("/api/projects/"+encodeURIComponent(projectId())+"/package",{method:"POST",body:body});setProject(data.project||data);toast("Publishing package built. Nothing has been posted.");}catch(error){toast(formatError(error),"error");}finally{setBusy(control,false);} }
+    async function retainAll() { var pending=decisionItems(state.project).filter(function(item){var s=decisionStatus(item);return (item.candidate_id||item.source_start_seconds!==undefined)&&(s==="unresolved"||s==="pending");}); if(!pending.length)return; var control=byId("retainAllButton"); setBusy(control,true,"Rejecting cuts…"); try{for(var i=0;i<pending.length;i++){var item=pending[i];var data=await api("/api/projects/"+encodeURIComponent(projectId())+"/decisions",{method:"POST",body:{item_id:decisionId(item,i),status:"rejected",note:"Retained by creator — suggestion not applied."}});state.project=data.project||data;}setProject(state.project);toast("All unresolved cut suggestions were rejected; their footage will be retained.");}catch(error){toast(formatError(error),"error");setProject(state.project);}finally{setBusy(control,false);} }
+    function selectTab(name) { document.querySelectorAll(".tab").forEach(function(tab){var selected=tab.dataset.tab===name;tab.setAttribute("aria-selected",String(selected));tab.tabIndex=selected?0:-1;}); document.querySelectorAll("[role=tabpanel]").forEach(function(panel){panel.hidden=panel.id!=="panel-"+name;}); if(name==="previews") updateRibbon(state.project); }
+    document.querySelectorAll(".tab").forEach(function(tab){tab.addEventListener("click",function(){selectTab(tab.dataset.tab);});tab.addEventListener("keydown",function(event){if(event.key!=="ArrowRight"&&event.key!=="ArrowLeft")return;var tabs=Array.from(document.querySelectorAll(".tab")),index=tabs.indexOf(tab),next=(index+(event.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length;tabs[next].focus();tabs[next].click();});});
+    document.querySelectorAll(".act").forEach(function(act){act.addEventListener("click",function(){var target={review:"decisions",preview:"previews",publish:"package"}[act.dataset.stage];if(target&&state.project){selectTab(target);byId("tab-"+target).focus();}});});
+    ["packageTitle","packageDescription","packageHashtags","socialCaption","pinnedComment","finalNote"].forEach(function(id){byId(id).addEventListener("input",function(){this.dataset.touched="true";if(id==="finalNote"&&state.project)renderApprovalControls(state.project);});});
+    els.captionJson.addEventListener("input",function(){state.drafts.captionJson=els.captionJson.value;state.drafts.captionDirty=true;byId("captionState").textContent="Unsaved caption draft preserved.";});
+    els.crop.addEventListener("input",function(){els.cropValue.textContent=els.crop.value+"%";}); els.form.addEventListener("submit",createProject); byId("saveCaptionsButton").addEventListener("click",saveCaptions); byId("renderButton").addEventListener("click",renderProject); byId("cancelJobButton").addEventListener("click",cancelJob); byId("retryJobButton").addEventListener("click",retryJob); byId("finalizeButton").addEventListener("click",finalize); byId("packageButton").addEventListener("click",buildPackage); byId("retainAllButton").addEventListener("click",retainAll);
+    updateRibbon(null); loadHealth(); loadRecentProject();
+  }());
+  </script>
+</body>
+</html>

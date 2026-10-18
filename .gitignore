@@ -1,0 +1,51 @@
+# Python environments and generated development files
+.venv/
+.venv-align/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+build/
+dist/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Original media and generated work (personal footage never goes to the repo)
+*.mp4
+*.mov
+*.mkv
+*.m4v
+*.wav
+*.mp3
+*.srt
+previews/
+data/incoming/*
+!data/incoming/.gitkeep
+projects/*
+!projects/.gitkeep
+exports/*
+!exports/.gitkeep
+temp/*
+!temp/.gitkeep
+
+# Local model downloads and caches
+models/*
+!models/.gitkeep
+.cache/
+cache/
+*.pt
+*.pth
+*.safetensors
+
+# Optional project-local third-party tools
+tools/ffmpeg*/
+tools/ffmpeg*.zip
+
+# Runtime logs
+*.log
+logs/

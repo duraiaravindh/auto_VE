@@ -1,0 +1,2 @@
+# No project-specific Python packages are required yet.
+# Add pinned dependencies here when the corresponding features are implemented.
