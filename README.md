@@ -1,10 +1,50 @@
-# Nama Kadhai caption pipeline
+# Nama Kadhai video editor
 
-transcript → caption chunks → styled ASS → burned-in MP4. Local, free, original video never modified.
+Local, free editing for Nama Kadhai videos: edit in OpenReel, then word-synced
+captions, Remotion title/outro cards and approval-gated landscape and vertical
+renders. Runs offline; the original recording is never modified.
 
 ## Setup (Windows)
-    pip install faster-whisper        # only needed for transcribe.py
-    # FFmpeg + FFprobe must be on PATH. The rounded font (Varela Round, OFL) is bundled in fonts/.
+    # Python 3.11+; FFmpeg/FFprobe go in tools/ (see config/settings.json).
+    # Fonts (Poppins, Varela Round; SIL OFL) are bundled in fonts/.
+
+## Editing in OpenReel, finishing in Nama Kadhai
+
+OpenReel (free, MIT) is the editor: timeline, trim/split/reorder, B-roll, music,
+effects, undo. Nama Kadhai finishes the export: word-synced captions, Remotion
+title/outro cards (free for individuals), and the approval-gated renders.
+
+1. `.\openreel.ps1` opens OpenReel at `http://localhost:5173`. Edit your raw
+   recording and export an MP4 **without captions**.
+2. Finish it:
+
+       .\caption.ps1 edited.mp4 captions.srt -Original raw_recording.mp4 `
+           -Intro "Remote Sandai" -IntroSubtitle "Nama Kadhai" `
+           -Outro "Nama Kadhai" -OutroSubtitle "Comment-la sollunga"
+
+   or, in the app, put the export in **Video file path**, the SRT in **Captions
+   file** and the raw recording in **Original recording**.
+
+How the captions stay in sync after editing: the SRT is word-timed on the
+**original** recording (where the text matches exactly), then the edited
+export's audio is matched back to the original to find which parts were kept
+(about a second for a minute of audio). Every word moves with its part; lines
+you cut are skipped and listed. This needs the voice audio left as recorded:
+added music is fine at a normal level, speed changes are not supported.
+
+One-time setup, outside OneDrive (both install tens of thousands of files):
+
+    git clone --depth 1 https://github.com/Augani/openreel-video.git $env:USERPROFILE\dev\openreel-video
+    cd $env:USERPROFILE\dev\openreel-video
+    npx -y pnpm@11.7.0 install --filter "@openreel/web..."
+    npx -y pnpm@11.7.0 build:wasm
+    cd <this project>
+    $env:PYTHONPATH="src"; python -m namakadhai.remotion_cards setup   # Remotion + headless Chrome (~300 MB)
+
+The card designs are in `remotion/src` (TitleCard, Outro); preview them with
+`npm run studio` inside `%USERPROFILE%\dev\namakadhai-remotion`. Remotion is
+free for individuals and companies of up to three people; larger companies
+need a Remotion company licence.
 
 ## Captioning a video (one step, word-synced)
 
@@ -32,23 +72,8 @@ One-time setup of the alignment environment (about 1.5 GB with the model):
 
 The model downloads to `models\torch\` on first run.
 
-## Workflow
-1. **Transcribe** (only when you approve the one-time model download)
-       python transcribe.py recording.mp4 --approve-download
-   Without the flag it uses an already-downloaded model or stops. Start with `--model small`.
-2. **Review the text** in `recording.transcript.json`
-   - Edit each segment's `"text"`. Leave `"words"` alone: timings are reused if the word count matches,
-     re-spread across the segment if it doesn't.
-   - Highlight in gold with asterisks: `Chinna vayasula *festival* vandhaale,`
-   - Or list words once in the top-level `"highlights": [...]`.
-3. **Check the plan** (instant, no rendering)
-       python captions.py check recording.transcript.json --profile landscape --size 1920x1080
-   Shows every caption, timing, line break, and flags lines that are too long.
-4. **Render**
-       python captions.py render recording.mp4 recording.transcript.json --profile landscape
-       python captions.py render recording.mp4 recording.transcript.json --profile vertical --crop-x 0.5
-   Add `--max-seconds 20` for a quick preview. An `.ass` file is saved next to each MP4 for fine-tuning in Aegisub.
-5. **Plan edits for review** (signal-level analysis only; does not change media)
+## Workflow (command line)
+1. **Plan edits for review** (signal-level analysis only; does not change media)
    Set the package source path, then generate a review-only edit decision list:
 
        $env:PYTHONPATH = "$PWD\src"
@@ -59,7 +84,7 @@ The model downloads to `models\torch\` on first run.
    audio levels for listening review, and includes approve/reject fields. It never applies
    cuts; quiet speech and expressive pauses must be checked by a person.
 
-6. **Approve cuts and render a technical preview** (all decisions stay local)
+2. **Approve cuts and render a technical preview** (all decisions stay local)
    Create a versioned plan and approval log in a new timestamped directory under the
    recording's `edit_review` folder:
 
@@ -279,15 +304,18 @@ See [FEATURE_STATUS.md](./FEATURE_STATUS.md) for the requirement-by-requirement
 status matrix, evidence, dependencies, and prioritized acceptance work.
 
 ## What "properly" means here
-- Sizes are fractions of frame height, so 480p previews and 4K finals look alike.
-- Landscape: ~6.2% of height, bottom margin 7.5%. Vertical (1080x1920): ~3.6%, bottom margin 20% (clear of Shorts/Reels UI).
-- Chunks break at sentences, commas (once long enough), pauses > 0.6 s, or when two lines are full. Max 2 lines, balanced, no lone orphan words.
-- Captions never overlap and never cut off speech; slight lead-in and hold; soft fade.
-- The renderer reports which font libass actually used and warns if it fell back.
-- Portrait footage in landscape uses a blurred, darkened fill behind the aspect-fit source image. `vertical` output centre-crops (shift with `--crop-x`). Face-aware reframing is Stage 5.
+- Every caption word is timed against the audio (MMS forced alignment). A caption
+  appears 0.15 s before its first word and the word being spoken turns gold.
+- Sizes are fractions of frame height, so small previews and 4K finals look alike.
+  Captions sit at the bottom: 7.5% margin in landscape, 10% in vertical.
+- Each SRT line becomes one caption of at most two lines; captions never overlap.
+- Portrait footage in landscape uses a blurred, darkened fill behind the
+  aspect-fit source image. Vertical output centre-crops (adjustable crop position).
 
 ## Tuning
-All style knobs live in `make_profile()` in captions.py (font_frac, margins, max_chars, colours at the top).
+Caption font, colours, outline, animation and word highlight are in
+`config/nama_kadhai_nostalgic.json` (`caption`). Size and margins per layout are
+`LAYOUTS` in `src/namakadhai/caption_renderer.py`. Card designs are in `remotion/src`.
 
 ## Tests
     $env:PYTHONPATH = "$PWD\src"
