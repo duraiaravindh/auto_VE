@@ -49,3 +49,7 @@ tools/ffmpeg*.zip
 # Runtime logs
 *.log
 logs/
+
+# Third-party apps checked out locally (OpenReel etc.)
+external/
+node_modules/

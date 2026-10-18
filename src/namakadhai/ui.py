@@ -615,6 +615,7 @@ class EditorHandler(BaseHTTPRequestHandler):
                     title=str(body.get("title", "")),
                     captions_path=(body.get("captions_path") or None),
                     music_path=(body.get("music_path") or None),
+                    original_path=(body.get("original_path") or None),
                     crop_x=body.get("crop_x", 0.5),
                     editing_intensity=str(body.get("editing_intensity", "balanced")),
                     captions_enabled=body.get("captions_enabled", True) is True,

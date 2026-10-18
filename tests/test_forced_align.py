@@ -1,6 +1,6 @@
 import unittest
 
-from namakadhai.forced_align import _spoken_tokens, build_aligned_captions
+from namakadhai.forced_align import _spoken_tokens, build_aligned_captions, select_spoken_cues
 
 
 class ForcedAlignTests(unittest.TestCase):
@@ -21,6 +21,22 @@ class ForcedAlignTests(unittest.TestCase):
         self.assertEqual([cue["text"] for cue in aligned], ["Naama chinna", "vayasilu indha"])
         self.assertEqual(aligned[1]["words"][0]["start"], 6.5)
         self.assertEqual(report["low_confidence_words"], ["indha @ 7.00s"])
+
+    def test_lines_missing_from_the_audio_are_dropped_one_at_a_time(self):
+        # Line 2 was cut from the video; while it is present it drags line 1 down.
+        def score_for(kept):
+            return [0.05 if i == 2 else (0.2 if i == 1 and 2 in kept else 0.7) for i in kept]
+
+        self.assertEqual(select_spoken_cues(4, score_for), [0, 1, 3])
+
+    def test_cut_lines_are_reported_not_captioned(self):
+        cues = [{"text": "Naama chinna"}, {"text": "cut line"}]
+        timings = [(5.6, 5.9, 0.9), (5.95, 6.4, 0.8), None, None]
+
+        aligned, report = build_aligned_captions(cues, timings, video_duration_seconds=10.0)
+
+        self.assertEqual([cue["text"] for cue in aligned], ["Naama chinna"])
+        self.assertEqual(report["not_in_audio"], ["cut line"])
 
 
 if __name__ == "__main__":

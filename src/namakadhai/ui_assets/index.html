@@ -201,6 +201,7 @@
           <div class="field"><label for="projectName">Project name</label><input id="projectName" name="project_name" value="Test story 001" required autocomplete="off"></div>
           <div class="field"><label for="openingTitle">Opening title <span class="microcopy">(optional)</span></label><input id="openingTitle" name="title" placeholder="A title shown at the start"></div>
           <div class="field full"><label for="captionsPath">Captions file <span class="microcopy">(optional · .srt or reviewed .json)</span></label><input id="captionsPath" name="captions_path" placeholder="e.g. subtitles.srt" autocomplete="off"><p class="microcopy">With an .srt, every word is timed to your speech automatically (about a minute). Its timestamps are ignored; the text must match what you say, in English letters.</p></div>
+          <div class="field full"><label for="originalPath">Original recording <span class="microcopy">(optional · only if the video above was edited, e.g. in OpenReel)</span></label><input id="originalPath" name="original_path" placeholder="e.g. raw_recording.mp4" autocomplete="off"><p class="microcopy">Captions are timed on the original, where the SRT matches exactly, then moved onto your edit. Lines you cut are skipped.</p></div>
           <details class="advanced">
             <summary>Editing choices</summary>
             <div class="field-grid advanced-grid">
@@ -390,7 +391,7 @@
     }
     function captionsFrom(project) { var captions=pick(project,["captions","caption_revision"],[]); if(captions&&captions.items) captions=captions.items; return safeArray(captions); }
     function renderCaptions(project) { var captions=captionsFrom(project); els.captionJson.value=state.drafts.captionDirty?state.drafts.captionJson:(captions.length?JSON.stringify(captions,null,2):""); byId("captionState").textContent=state.drafts.captionDirty?"Unsaved caption draft preserved.":captions.length?captions.length+" reviewed caption entries loaded.":"No saved revision shown."; renderAlignment(project); }
-    function renderAlignment(project) { var box=byId("alignmentSummary"), report=project&&project.caption_alignment; if(!report){box.hidden=true;return;} var low=safeArray(report.low_confidence_words); box.hidden=false; box.textContent="Captions were timed word-by-word to your voice: "+report.aligned_word_count+" words, average confidence "+Number(report.mean_word_confidence).toFixed(2)+"."+(low.length?" Check these spots, where the text may not match what was said: "+low.join(", ")+".":" Every word matched well."); }
+    function renderAlignment(project) { var box=byId("alignmentSummary"), report=project&&project.caption_alignment; if(!report){box.hidden=true;return;} var low=safeArray(report.low_confidence_words); box.hidden=false; var cut=safeArray(report.edit&&report.edit.lines_cut_in_edit); box.textContent="Captions were timed word-by-word to your voice: "+report.aligned_word_count+" words, average confidence "+Number(report.mean_word_confidence).toFixed(2)+"."+(low.length?" Check these spots, where the text may not match what was said: "+low.join(", ")+".":" Every word matched well.")+(cut.length?" Lines you cut in the edit (no caption): "+cut.join(" | ")+".":""); }
     function outputInfo(project) { return project&&project.outputs!==undefined?project.outputs:[]; }
     function outputUrl(value) { var raw=typeof value==="string"?value:(value&&pick(value,["url","media_url","download_url","path"],"")); if(!raw)return ""; try{var parsed=new URL(String(raw),location.href); return parsed.origin===location.origin?parsed.href:"";}catch(error){return "";} }
     function findOutput(outputs,kind) {
@@ -488,7 +489,7 @@
     async function loadProject(id) { try{ var data=await api("/api/projects/"+encodeURIComponent(id)); setProject(data.project||data); }catch(error){toast(formatError(error),"error");} }
     async function createProject(event) {
       event.preventDefault(); var srt=/\.srt$/i.test(byId("captionsPath").value.trim()); setBusy(els.analyse,true,srt?"Analysing and timing captions to your voice…":"Analysing locally…");
-      var body={source_path:byId("sourcePath").value.trim(),project_name:byId("projectName").value.trim(),title:byId("openingTitle").value.trim(),captions_path:byId("captionsPath").value.trim(),music_path:byId("musicPath").value.trim(),crop_x:Number(els.crop.value)/100,editing_intensity:byId("intensity").value,captions_enabled:byId("captionsEnabled").checked};
+      var body={source_path:byId("sourcePath").value.trim(),project_name:byId("projectName").value.trim(),title:byId("openingTitle").value.trim(),captions_path:byId("captionsPath").value.trim(),original_path:byId("originalPath").value.trim(),music_path:byId("musicPath").value.trim(),crop_x:Number(els.crop.value)/100,editing_intensity:byId("intensity").value,captions_enabled:byId("captionsEnabled").checked};
       try { var data=await api("/api/projects",{method:"POST",body:body}); setProject(data.project||data); toast("Analysis complete. Review each suggestion in your own time."); }
       catch(error){ toast(formatError(error),"error"); }
       finally { setBusy(els.analyse,false); }

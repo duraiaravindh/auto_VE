@@ -24,6 +24,7 @@ from namakadhai.caption_renderer import (
     load_caption_cues,
 )
 from namakadhai.forced_align import PROJECT_ROOT, import_forced_aligned_srt
+from namakadhai.remotion_cards import RemotionCardError, render_card, validate_card_props
 from namakadhai.media_review import MediaReviewError, _resolve_ffmpeg, preflight_media
 from namakadhai.story_editor import load_creative_profile
 from namakadhai.subtitle_import import SubtitleImportError
@@ -39,7 +40,11 @@ def caption_video(
     output_root: Path = OUTPUT_ROOT,
     profile_path: Path = DEFAULT_PROFILE,
     layout: str | None = None,
+    original: Path | None = None,
+    intro: tuple[str, str] | None = None,
+    outro: tuple[str, str] | None = None,
 ) -> dict[str, Path]:
+    """Caption ``video``; with ``original``, ``video`` is an edit of that recording."""
     metadata, _ = preflight_media(video)
     width, height = metadata.video.width, metadata.video.height
     if width is None or height is None or metadata.duration_seconds is None:
@@ -52,8 +57,9 @@ def caption_video(
     print("1/3 Aligning caption words to the speech...", flush=True)
     captions = output_dir / "captions.json"
     payload = import_forced_aligned_srt(
-        srt, video, captions,
+        srt, original or video, captions,
         ffmpeg_path=ffmpeg, video_duration_seconds=metadata.duration_seconds,
+        edited_path=video if original else None,
     )
 
     print("2/3 Writing styled subtitles...", flush=True)
@@ -78,12 +84,80 @@ def caption_video(
     if result.returncode != 0 or not preview.is_file():
         raise CaptionError("FFmpeg could not render the captioned video. " + result.stderr[-400:])
 
+    final = preview
+    if intro or outro:
+        print("+ Rendering Remotion cards and joining them...", flush=True)
+        fps = round(metadata.video.frame_rate or 30)
+        cards = {}
+        for name, composition, text in (("intro", "TitleCard", intro), ("outro", "Outro", outro)):
+            if text:
+                props = validate_card_props(
+                    title=text[0], subtitle=text[1], width=width, height=height, fps=fps,
+                )
+                cards[name] = render_card(composition, props, output_dir / f"{name}_card.mp4")
+        final = output_dir / f"{video.stem}_final.mp4"
+        parts = [cards.get("intro"), preview, cards.get("outro")]
+        result = subprocess.run(
+            build_join_command(ffmpeg, [part for part in parts if part], final, width, height, fps),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            check=False, timeout=3600, shell=False,
+        )
+        if result.returncode != 0 or not final.is_file():
+            raise CaptionError("FFmpeg could not join the cards. " + result.stderr[-400:])
+
     report = payload["source"]["alignment"]
     (output_dir / "alignment_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    return {"folder": output_dir, "captions": captions, "ass": ass, "video": preview,
+    return {"folder": output_dir, "captions": captions, "ass": ass, "video": final,
             "report": report}
+
+
+def build_join_command(
+    ffmpeg: Path, parts: list[Path], output: Path, width: int, height: int, fps: int,
+) -> list[str]:
+    """Join clips end to end; clips without sound (Remotion cards) get silence."""
+    command = [str(ffmpeg), "-hide_banner", "-loglevel", "error", "-nostdin", "-n"]
+    for part in parts:
+        command += ["-i", str(part)]
+    filters, labels = [], []
+    for index, part in enumerate(parts):
+        filters.append(
+            f"[{index}:v:0]scale={width}:{height},setsar=1,fps={fps},format=yuv420p[v{index}]"
+        )
+        if _has_audio(ffmpeg, part):
+            filters.append(
+                f"[{index}:a:0]aresample=48000,aformat=channel_layouts=stereo[a{index}]"
+            )
+        else:
+            filters.append(
+                f"anullsrc=r=48000:cl=stereo,atrim=duration={_duration(ffmpeg, part):.3f}[a{index}]"
+            )
+        labels.append(f"[v{index}][a{index}]")
+    filters.append("".join(labels) + f"concat=n={len(parts)}:v=1:a=1[v][a]")
+    return command + [
+        "-filter_complex", ";".join(filters), "-map", "[v]", "-map", "[a]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(output),
+    ]
+
+
+def _probe(ffmpeg: Path, media: Path, entries: str, stream: str | None = None) -> str:
+    ffprobe = ffmpeg.with_name(ffmpeg.name.replace("ffmpeg", "ffprobe"))
+    command = [str(ffprobe), "-v", "error", "-show_entries", entries, "-of", "csv=p=0"]
+    if stream:
+        command += ["-select_streams", stream]
+    return subprocess.run(
+        command + [str(media)], capture_output=True, text=True, check=False, shell=False
+    ).stdout.strip()
+
+
+def _has_audio(ffmpeg: Path, media: Path) -> bool:
+    return bool(_probe(ffmpeg, media, "stream=index", "a"))
+
+
+def _duration(ffmpeg: Path, media: Path) -> float:
+    return float(_probe(ffmpeg, media, "format=duration") or 0)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -96,13 +170,23 @@ def main(argv: list[str] | None = None) -> int:
                         help="Default: picked from the video's orientation.")
     parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE,
                         help="Creative profile with the caption style.")
+    parser.add_argument("--original", type=Path,
+                        help="The unedited recording, when VIDEO is an edit of it (e.g. from OpenReel).")
+    parser.add_argument("--intro", help="Title for a Remotion opening card.")
+    parser.add_argument("--intro-subtitle", default="", help="Second line of the opening card.")
+    parser.add_argument("--outro", help="Title for a Remotion closing card.")
+    parser.add_argument("--outro-subtitle", default="", help="Call-to-action line of the closing card.")
     arguments = parser.parse_args(argv)
     try:
         outputs = caption_video(
             arguments.video.resolve(), arguments.srt.resolve(),
             profile_path=arguments.profile, layout=arguments.layout,
+            original=arguments.original.resolve() if arguments.original else None,
+            intro=(arguments.intro, arguments.intro_subtitle) if arguments.intro else None,
+            outro=(arguments.outro, arguments.outro_subtitle) if arguments.outro else None,
         )
-    except (SubtitleImportError, CaptionError, MediaReviewError, FileNotFoundError, OSError) as exc:
+    except (SubtitleImportError, CaptionError, MediaReviewError, RemotionCardError,
+            FileNotFoundError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     report = outputs["report"]
@@ -112,6 +196,8 @@ def main(argv: list[str] | None = None) -> int:
     if report["low_confidence_words"]:
         print("Check these spots (text may not match the speech): "
               + ", ".join(report["low_confidence_words"]))
+    if report.get("edit", {}).get("lines_cut_in_edit"):
+        print("Lines cut in the edit (no caption): " + " | ".join(report["edit"]["lines_cut_in_edit"]))
     return 0
 
 

@@ -17,7 +17,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from namakadhai.subtitle_import import SubtitleImportError, parse_srt
 
@@ -101,15 +101,28 @@ def align_words(
     ``phrase_starts`` so breaths, fillers and words missing from the text are
     absorbed there instead of stretching the neighbouring words.
     """
-    import torch
+    return _align_on_emission(
+        load_emission(media_path, ffmpeg_path=ffmpeg_path), words, phrase_starts=phrase_starts
+    )
+
+
+def load_emission(media_path: str | Path, *, ffmpeg_path: str | Path):
+    """Run the speech model once; alignments against it are then cheap."""
     from torchaudio.pipelines import MMS_FA
 
     os.environ.setdefault("TORCH_HOME", str(PROJECT_ROOT / "models" / "torch"))
     waveform = _decode_audio(Path(media_path).resolve(), Path(ffmpeg_path).resolve())
-    model = MMS_FA.get_model()
+    return _chunked_emission(MMS_FA.get_model(), waveform)
+
+
+def _align_on_emission(
+    emission, words: list[str], *, phrase_starts: set[int] | None = None
+) -> list[tuple[float, float, float] | None]:
+    import torch
+    from torchaudio.pipelines import MMS_FA
+
     tokenizer = MMS_FA.get_tokenizer()
     aligner = MMS_FA.get_aligner()
-
     token_groups = [_spoken_tokens(word) for word in words]
     if not any(token_groups):
         raise SubtitleImportError("Caption text has no alignable words.")
@@ -122,7 +135,6 @@ def align_words(
         positions.append(len(flat))
         flat.extend(group)
     flat.append("*")
-    emission = _chunked_emission(model, waveform)
     with torch.inference_mode():
         spans = aligner(emission, tokenizer(flat))
     seconds_per_frame = FRAME_SAMPLES / SAMPLE_RATE
@@ -140,6 +152,35 @@ def align_words(
     return timings
 
 
+def select_spoken_cues(
+    cue_count: int,
+    score_for: Callable[[list[int]], list[float]],
+    *,
+    threshold: float = 0.3,
+) -> list[int]:
+    """Indices of caption lines that are really in the audio.
+
+    Text that was cut from the video still gets squeezed into the audio by the
+    aligner, with near-zero confidence, and drags neighbouring lines with it.
+    So drop only the single worst line per round and re-align, then try each
+    dropped line again in case it was only pulled down by a neighbour.
+    ``score_for(kept)`` returns the mean word confidence of each kept line.
+    """
+    kept = list(range(cue_count))
+    dropped: list[int] = []
+    while kept:
+        scores = score_for(kept)
+        worst = min(range(len(kept)), key=scores.__getitem__)
+        if scores[worst] >= threshold:
+            break
+        dropped.append(kept.pop(worst))
+    for index in sorted(dropped):
+        trial = sorted(kept + [index])
+        if min(score_for(trial)) >= threshold:
+            kept = trial
+    return kept
+
+
 def build_aligned_captions(
     cues: list[dict[str, Any]],
     timings: list[tuple[float, float, float] | None],
@@ -153,7 +194,9 @@ def build_aligned_captions(
     words_per_cue = [str(cue["text"]).split() for cue in cues]
     cursor = 0
     spoken: list[list[tuple[str, tuple[float, float, float]]]] = []
-    for cue_words in words_per_cue:
+    present: list[dict[str, Any]] = []
+    not_in_audio: list[str] = []
+    for cue, cue_words in zip(cues, words_per_cue):
         pairs = []
         for word in cue_words:
             timing = timings[cursor]
@@ -161,8 +204,13 @@ def build_aligned_captions(
             if timing is not None:
                 pairs.append((word, timing))
         if not pairs:
-            raise SubtitleImportError(f"Caption has no alignable words: {' '.join(cue_words)}")
+            not_in_audio.append(str(cue["text"]))
+            continue
         spoken.append(pairs)
+        present.append(cue)
+    if not spoken:
+        raise SubtitleImportError("None of the caption lines were found in the audio.")
+    cues = present
 
     aligned: list[dict[str, Any]] = []
     low_confidence: list[str] = []
@@ -204,6 +252,7 @@ def build_aligned_captions(
         "skipped_word_count": sum(timing is None for timing in timings),
         "mean_word_confidence": round(sum(scores) / len(scores), 3),
         "low_confidence_words": low_confidence,
+        "not_in_audio": not_in_audio,
         "text_preserved_exactly": True,
     }
     return aligned, report
@@ -216,29 +265,94 @@ def import_forced_aligned_srt(
     *,
     ffmpeg_path: str | Path,
     video_duration_seconds: float,
+    edited_path: str | Path | None = None,
 ) -> dict[str, Any]:
+    """Time SRT words on ``media_path``.
+
+    With ``edited_path`` (an export from OpenReel or any editor), the words are
+    timed on the original recording, where the SRT matches exactly, then moved
+    onto the edit by matching its audio back to the original. Words from parts
+    that were cut out are dropped. ``video_duration_seconds`` is then the
+    edited video's duration.
+    """
     output = Path(output_path).resolve()
     if output.exists():
         raise SubtitleImportError(f"Refusing to overwrite caption import: {output.name}")
     if not math.isfinite(video_duration_seconds) or video_duration_seconds <= 0:
         raise SubtitleImportError("Video duration must be positive and finite.")
     cues = parse_srt(source_path)
-    words: list[str] = []
-    phrase_starts: set[int] = set()
-    for cue in cues:
-        phrase_starts.add(len(words))
-        words.extend(str(cue["text"]).split())
-    timings = align_words(
-        media_path, words, ffmpeg_path=ffmpeg_path, phrase_starts=phrase_starts
-    )
+    emission = load_emission(media_path, ffmpeg_path=ffmpeg_path)
+    cue_words = [str(cue["text"]).split() for cue in cues]
+
+    def align_subset(kept: list[int]) -> list[tuple[float, float, float] | None]:
+        words: list[str] = []
+        phrase_starts: set[int] = set()
+        for index in kept:
+            phrase_starts.add(len(words))
+            words.extend(cue_words[index])
+        return _align_on_emission(emission, words, phrase_starts=phrase_starts)
+
+    def cue_scores(kept: list[int]) -> list[float]:
+        timings, cursor, scores = align_subset(kept), 0, []
+        for index in kept:
+            found = [t[2] for t in timings[cursor : cursor + len(cue_words[index])] if t]
+            cursor += len(cue_words[index])
+            scores.append(sum(found) / len(found) if found else 0.0)
+        return scores
+
+    kept = select_spoken_cues(len(cues), cue_scores)
+    kept_timings = iter(align_subset(kept))
+    timings: list[tuple[float, float, float] | None] = []
+    for index, words_of_cue in enumerate(cue_words):
+        for _ in words_of_cue:
+            timings.append(next(kept_timings) if index in kept else None)
+    edit_report = None
+    if edited_path is not None:
+        from namakadhai.edit_matcher import EditMatchError, map_words, match_edit
+
+        try:
+            segments = match_edit(
+                Path(media_path).resolve(), Path(edited_path).resolve(),
+                ffmpeg=Path(ffmpeg_path).resolve(),
+            )
+        except EditMatchError as exc:
+            raise SubtitleImportError(str(exc)) from exc
+        moved = map_words([(t[0], t[1]) if t else (-1.0, -1.0) for t in timings], segments)
+        edited_cues, edited_timings, cut_lines = [], [], []
+        cursor = 0
+        for cue, words_of_cue in zip(cues, cue_words):
+            kept_words = []
+            for word in words_of_cue:
+                timing, place = timings[cursor], moved[cursor]
+                cursor += 1
+                if timing is not None and place is not None:
+                    kept_words.append((word, (place[0], place[1], timing[2])))
+            if not kept_words:
+                cut_lines.append(str(cue["text"]))
+                continue
+            edited_cues.append({**cue, "text": " ".join(word for word, _ in kept_words)})
+            edited_timings.extend(timing for _, timing in kept_words)
+        if not edited_cues:
+            raise SubtitleImportError("No caption words fall inside the edited video.")
+        cues, timings = edited_cues, edited_timings
+        covered = sum(segment.edit_end - segment.edit_start for segment in segments)
+        edit_report = {
+            "edited_media": str(Path(edited_path).resolve()),
+            "segments": [segment.__dict__ for segment in segments],
+            "matched_seconds": round(covered, 3),
+            "lines_cut_in_edit": cut_lines,
+        }
     aligned, report = build_aligned_captions(
         cues, timings, video_duration_seconds=video_duration_seconds
     )
+    if edit_report is not None:
+        report["edit"] = edit_report
     payload = {
         "version": 1, "reviewed": True,
         "source": {
             "file": str(Path(source_path).resolve()),
-            "media": str(Path(media_path).resolve()),
+            "media": str(Path(edited_path or media_path).resolve()),
+            "original_media": str(Path(media_path).resolve()),
             "video_duration_seconds": video_duration_seconds,
             "alignment": report,
         },
@@ -266,15 +380,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("srt", type=Path, help="Reviewed SRT; text is kept exactly.")
     parser.add_argument("video", type=Path, help="Source video; it is only read.")
     parser.add_argument("output", type=Path, help="New caption JSON (never overwritten).")
+    parser.add_argument(
+        "--edited", type=Path,
+        help="Edited export (e.g. from OpenReel) of VIDEO; captions are produced for it.",
+    )
     arguments = parser.parse_args(argv)
     try:
-        metadata, _ = preflight_media(arguments.video)
+        metadata, _ = preflight_media(arguments.edited or arguments.video)
         if metadata.duration_seconds is None:
             raise SubtitleImportError("FFprobe did not report the video duration.")
         payload = import_forced_aligned_srt(
             arguments.srt, arguments.video, arguments.output,
             ffmpeg_path=_resolve_ffmpeg(None),
             video_duration_seconds=metadata.duration_seconds,
+            edited_path=arguments.edited,
         )
     except (SubtitleImportError, MediaReviewError, FileNotFoundError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -286,6 +405,13 @@ def main(argv: list[str] | None = None) -> int:
         f"(mean confidence {report['mean_word_confidence']:.2f}); "
         f"{len(report['low_confidence_words'])} low-confidence words."
     )
+    if report["not_in_audio"]:
+        print("Not in the audio (skipped): " + " | ".join(report["not_in_audio"]))
+    if "edit" in report:
+        edit = report["edit"]
+        print(f"Matched {len(edit['segments'])} kept part(s) of the original in the edit.")
+        if edit["lines_cut_in_edit"]:
+            print("Cut in the edit (no caption): " + " | ".join(edit["lines_cut_in_edit"]))
     return 0
 
 

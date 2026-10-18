@@ -100,8 +100,14 @@ class ProjectApplication:
     def caption_alignment_ready() -> bool:
         return ALIGNMENT_PYTHON.is_file()
 
-    def _align_srt_captions(self, srt: Path, source: Path, directory: Path) -> Path:
-        """Word-align SRT text to the source speech in the separate alignment environment."""
+    def _align_srt_captions(
+        self, srt: Path, source: Path, directory: Path, original: Path | None = None
+    ) -> Path:
+        """Word-align SRT text to the source speech in the separate alignment environment.
+
+        With ``original``, ``source`` is an edit of it (e.g. an OpenReel export):
+        words are timed on the original and moved onto the edit.
+        """
         if not srt.is_file():
             raise ApplicationError(f"Caption file does not exist: {srt.name}")
         if not self.caption_alignment_ready():
@@ -114,7 +120,8 @@ class ProjectApplication:
         try:
             result = subprocess.run(
                 [str(ALIGNMENT_PYTHON), "-m", "namakadhai.forced_align",
-                 str(srt), str(source), str(output)],
+                 str(srt), str(original or source), str(output)]
+                + (["--edited", str(source)] if original else []),
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
                 check=False, timeout=3600, shell=False, env=environment, cwd=PROJECT_ROOT,
             )
@@ -179,6 +186,7 @@ class ProjectApplication:
         title: str = "",
         captions_path: str | Path | None = None,
         music_path: str | Path | None = None,
+        original_path: str | Path | None = None,
         crop_x: float = 0.5,
         editing_intensity: str = "balanced",
         captions_enabled: bool = True,
@@ -251,7 +259,10 @@ class ProjectApplication:
             self._write(record)
             if captions_enabled and captions_path and Path(captions_path).suffix.lower() == ".srt":
                 srt = Path(captions_path).expanduser().resolve()
-                captions_path = self._align_srt_captions(srt, source, directory)
+                original = Path(original_path).expanduser().resolve() if original_path else None
+                if original is not None and not original.is_file():
+                    raise ApplicationError(f"Original recording does not exist: {original.name}")
+                captions_path = self._align_srt_captions(srt, source, directory, original)
                 alignment = json.loads(captions_path.read_text(encoding="utf-8"))["source"]["alignment"]
                 record["caption_alignment"] = {"srt_path": str(srt), **alignment}
                 self._write(record)

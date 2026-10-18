@@ -151,12 +151,46 @@ class ApplicationTests(unittest.TestCase):
                 self.source, captions_path=str(srt)
             )
 
+        self.assertNotIn("--edited", run.call_args.args[0])
         passed = Path(create_plan.call_args.kwargs["captions_path"])
         self.assertEqual(passed.name, "captions_aligned.json")
         self.assertEqual(passed.parent.name, project["project_id"])
         record = json.loads((passed.parent / "project.json").read_text(encoding="utf-8"))
         self.assertEqual(record["caption_alignment"]["mean_word_confidence"], 0.7)
         self.assertEqual(record["caption_alignment"]["srt_path"], str(srt.resolve()))
+
+    @patch("namakadhai.application.subprocess.run")
+    @patch("namakadhai.application.analyze_video_signals")
+    @patch("namakadhai.application.create_story_plan")
+    @patch("namakadhai.application.probe_video")
+    def test_edited_video_captions_are_timed_on_the_original(
+        self, probe, create_plan, analyze, run
+    ):
+        probe.return_value = self.metadata
+        create_plan.side_effect = self._fake_plan
+        analyze.return_value = {"report_path": "visual.json", "warnings": []}
+        srt = self.root / "captions.srt"
+        srt.write_text("1\n00:00:00,000 --> 00:00:02,000\nNaama chinna\n", encoding="utf-8")
+        original = self.root / "raw.mp4"
+        original.write_bytes(b"raw recording")
+
+        def fake_align(command, **kwargs):
+            Path(command[-3] if command[-2] == "--edited" else command[-1]).write_text(
+                json.dumps({"version": 1, "source": {"alignment": {}}, "captions": []}),
+                encoding="utf-8",
+            )
+            return type("Result", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        run.side_effect = fake_align
+        with patch.object(ProjectApplication, "caption_alignment_ready", return_value=True):
+            ProjectApplication(self.settings).create_project(
+                self.source, captions_path=str(srt), original_path=str(original)
+            )
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[3:5], [str(srt.resolve()), str(original.resolve())])
+        self.assertEqual(command[-2:], ["--edited", str(self.source.resolve())])
+        self.assertEqual(original.read_bytes(), b"raw recording")
 
     @patch("namakadhai.application.record_story_decision")
     def test_decision_updates_record_without_changing_source(self, record_decision):
