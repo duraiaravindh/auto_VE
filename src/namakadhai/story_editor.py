@@ -27,6 +27,7 @@ from namakadhai.caption_renderer import (
     _escape_filter_path,
     build_ass,
     load_caption_cues,
+    render_threads,
 )
 from namakadhai.media_review import (
     MediaReviewError,
@@ -1124,9 +1125,9 @@ def _build_ffmpeg_command(
         "info" if audio_only else "error",
         "-nostdin",
         "-filter_complex_threads",
-        "1",
+        str(render_threads()),
         "-threads",
-        "1",
+        str(render_threads()),
         "-n",
         "-i",
         str(source),
@@ -1154,7 +1155,7 @@ def _build_ffmpeg_command(
             "-crf",
             "20",
             "-threads:v",
-            "1",
+            str(render_threads()),
             "-pix_fmt",
             "yuv420p",
         )

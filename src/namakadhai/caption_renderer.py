@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -444,6 +445,17 @@ def build_ass(
     return "\n".join(lines) + "\n"
 
 
+def render_threads() -> int:
+    """FFmpeg threads: half the logical CPUs, at most 4, so an 8 GB laptop stays usable.
+
+    Override with the NAMAKADHAI_RENDER_THREADS environment variable (1 = old behaviour).
+    """
+    configured = os.environ.get("NAMAKADHAI_RENDER_THREADS", "").strip()
+    if configured.isdigit() and int(configured) > 0:
+        return int(configured)
+    return max(1, min(4, (os.cpu_count() or 2) // 2))
+
+
 def _escape_filter_path(path: Path) -> str:
     value = path.resolve().as_posix()
     value = value.replace("\\", r"\\")
@@ -474,9 +486,9 @@ def build_render_command(
         "error",
         "-nostdin",
         "-filter_threads",
-        "1",
+        str(render_threads()),
         "-threads",
-        "1",
+        str(render_threads()),
         "-n",
         "-i",
         str(Path(source).resolve()),
@@ -493,7 +505,7 @@ def build_render_command(
         "-crf",
         "20",
         "-threads:v",
-        "1",
+        str(render_threads()),
         "-c:a",
         "copy",
         "-movflags",

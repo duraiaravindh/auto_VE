@@ -17,6 +17,7 @@ from namakadhai.caption_renderer import (
     build_ass,
     build_render_command,
     load_caption_cues,
+    render_threads,
     render_caption_preview,
 )
 from namakadhai.probe import AudioStreamMetadata, VideoMetadata, VideoStreamMetadata
@@ -221,15 +222,26 @@ class CaptionRendererTests(unittest.TestCase):
         command = build_render_command(self.ffmpeg, self.video, ass, output)
 
         self.assertIn("-n", command)
-        self.assertEqual(command[command.index("-threads") + 1], "1")
-        self.assertEqual(command[command.index("-threads:v") + 1], "1")
-        self.assertEqual(command[command.index("-filter_threads") + 1], "1")
+        threads = str(render_threads())
+        self.assertEqual(command[command.index("-threads") + 1], threads)
+        self.assertEqual(command[command.index("-threads:v") + 1], threads)
+        self.assertEqual(command[command.index("-filter_threads") + 1], threads)
         self.assertIn(str(self.video.resolve()), command)
         self.assertEqual(command[-1], str(output))
         self.assertIn("ass=filename=", command[command.index("-vf") + 1])
         self.assertIn("fontsdir=", command[command.index("-vf") + 1])
         self.assertIn("0:a?", command)
         self.assertEqual(self.video.read_bytes(), b"source-video")
+
+    def test_render_threads_default_and_override(self) -> None:
+        with patch.dict("os.environ", {"NAMAKADHAI_RENDER_THREADS": ""}), \
+                patch("os.cpu_count", return_value=8):
+            self.assertEqual(render_threads(), 4)
+        with patch.dict("os.environ", {"NAMAKADHAI_RENDER_THREADS": ""}), \
+                patch("os.cpu_count", return_value=2):
+            self.assertEqual(render_threads(), 1)
+        with patch.dict("os.environ", {"NAMAKADHAI_RENDER_THREADS": "1"}):
+            self.assertEqual(render_threads(), 1)
 
     @patch("namakadhai.caption_renderer.subprocess.run")
     @patch("namakadhai.caption_renderer.preflight_media")
