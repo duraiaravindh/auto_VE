@@ -206,11 +206,14 @@ class StoryEditorTests(unittest.TestCase):
                 "-f",
                 "lavfi",
                 "-i",
-                "aevalsrc=exprs='if(between(t,0.5,1.5),0.8*sin(2*PI*330*t),0)':s=48000:d=2",
+                # Sources run 1 s past the measured window: sidechaincompress stops
+                # at the first input EOF, and FFmpeg's threaded inputs make the
+                # last ~0.1 s nondeterministic.
+                "aevalsrc=exprs='if(between(t,0.5,1.5),0.8*sin(2*PI*330*t),0)':s=48000:d=3",
                 "-f",
                 "lavfi",
                 "-i",
-                "sine=frequency=880:sample_rate=48000:duration=2",
+                "sine=frequency=880:sample_rate=48000:duration=3",
                 "-filter_complex",
                 "[1:a]volume=-6dB[m];"
                 "[m][0:a]sidechaincompress=threshold=0.03:ratio=8:"
