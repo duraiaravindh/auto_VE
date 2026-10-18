@@ -150,10 +150,33 @@ def find_fillers(words: list[Word], *, extra: Iterable[str] = ()) -> list[dict[s
     return found
 
 
+def find_pauses(
+    words: list[Word], *, minimum: float = 1.0, keep_after: float = 0.25, keep_before: float = 0.2,
+) -> list[dict[str, Any]]:
+    """Long gaps between spoken words, shortened to a natural ~0.45 s (never removed).
+
+    Uses word timings rather than a loudness threshold, so room noise can't
+    hide a pause.
+    """
+    found = []
+    for previous, following in zip(words, words[1:]):
+        gap = following.start - previous.end
+        if gap < minimum:
+            continue
+        found.append(_candidate(
+            "pause", previous.end + keep_after, following.start - keep_before,
+            "high" if gap >= 1.2 else "medium",
+            f"Long pause ({gap:.1f}s) shortened to a natural gap.",
+            {"after": previous.text, "before": following.text, "gap_seconds": round(gap, 2)},
+        ))
+    return found
+
+
 def suggest_cuts(lines: list[list[Word]], *, extra_fillers: Iterable[str] = ()) -> list[dict[str, Any]]:
-    """All suggestions, non-overlapping, preferring retakes > repeats > fillers."""
+    """All suggestions, non-overlapping, preferring retakes > repeats > fillers > pauses."""
     words = [word for line in lines for word in line]
-    ordered = find_retakes(lines) + find_repeats(words) + find_fillers(words, extra=extra_fillers)
+    ordered = (find_retakes(lines) + find_repeats(words)
+               + find_fillers(words, extra=extra_fillers) + find_pauses(words))
     kept: list[dict[str, Any]] = []
     for item in ordered:
         start, end = item["proposed_cut_seconds"]

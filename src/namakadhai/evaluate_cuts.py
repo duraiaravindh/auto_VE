@@ -61,8 +61,9 @@ def evaluate(cuts: list[dict[str, Any]], marks: list[tuple[float, float, str]]) 
              "evidence": cut.get("evidence")}
         )
     caught, missed = [], []
+    all_ranges = ranges + [tuple(map(float, cut["proposed_cut_seconds"])) for cut in pause_cuts]
     for start, end, label in marks:
-        covered = sum(_overlap((start, end), span) for span in ranges)
+        covered = sum(_overlap((start, end), span) for span in all_ranges)
         (caught if covered >= 0.5 * (end - start) else missed).append(
             {"label": label, "start": start, "end": end}
         )

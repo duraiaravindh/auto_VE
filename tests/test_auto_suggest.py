@@ -50,6 +50,17 @@ class AutoSuggestTests(unittest.TestCase):
             [("umm", "high"), ("vandhu", "low")],
         )
 
+    def test_long_gap_between_words_is_shortened_not_removed(self):
+        words = [Word("andha", 1.0, 1.3), Word("feel", 3.3, 3.6), Word("ku", 4.2, 4.4)]
+
+        cuts = suggest_cuts([words])
+
+        self.assertEqual(self.kinds(cuts), [("pause", "high", "APPROVED")])
+        start, end = cuts[0]["proposed_cut_seconds"]
+        self.assertAlmostEqual(start, 1.55)
+        self.assertAlmostEqual(end, 3.1)
+        self.assertAlmostEqual((3.3 - 1.3) - (end - start), 0.45)
+
 
 if __name__ == "__main__":
     unittest.main()

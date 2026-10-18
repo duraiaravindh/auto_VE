@@ -5,7 +5,7 @@ from namakadhai.evaluate_cuts import evaluate, parse_time
 
 class EvaluateCutsTests(unittest.TestCase):
     def test_counts_caught_missed_and_false_cuts(self):
-        marks = [(10.0, 14.0, "retake"), (30.0, 30.5, "filler")]
+        marks = [(10.0, 14.0, "retake"), (30.0, 30.5, "filler"), (60.0, 61.2, "pause")]
         cuts = [
             {"kind": "retake", "proposed_cut_seconds": [10.2, 14.0]},
             {"kind": "repeat", "proposed_cut_seconds": [50.0, 51.0]},
@@ -14,7 +14,7 @@ class EvaluateCutsTests(unittest.TestCase):
 
         result = evaluate(cuts, marks)
 
-        self.assertEqual(len(result["caught"]), 1)
+        self.assertEqual([m["label"] for m in result["caught"]], ["retake", "pause"])
         self.assertEqual(result["missed"][0]["label"], "filler")
         self.assertEqual([c["kind"] for c in result["correct_cuts"]], ["retake"])
         self.assertEqual([c["kind"] for c in result["false_cuts"]], ["repeat"])
