@@ -24,6 +24,8 @@ class FakeApplication:
         self.projects_root.mkdir(parents=True)
         self.project = {"project_id": PROJECT_ID, "state": "PREVIEW_READY"}
         self.render_error: Exception | None = None
+        self.auto_error: Exception | None = None
+        self.auto_gate: threading.Event | None = None
         self.package_metadata: dict[str, object] | None = None
         self.plan_path = root / "plan.json"
         self.plan_path.write_text('{"revision":1}', encoding="utf-8")
@@ -80,6 +82,15 @@ class FakeApplication:
         self, project_id: str, metadata: dict[str, Any]
     ) -> dict[str, object]:
         self.package_metadata = metadata
+        return self.get_project(project_id)
+
+    def run_auto(self, project_id: str, progress) -> dict[str, object]:
+        progress("Finding retakes, repeats and pauses", 50)
+        if self.auto_error is not None:
+            raise self.auto_error
+        if self.auto_gate is not None:
+            self.auto_gate.wait(timeout=3)
+        self.project["state"] = "REVIEW"
         return self.get_project(project_id)
 
     def render(self, project_id: str, progress, *, attempt=None) -> dict[str, object]:
@@ -331,6 +342,60 @@ class EditorHTTPTests(unittest.TestCase):
         stale = JobManager(storage).get(retried["job_id"])
         self.assertEqual(stale["status"], "failed")
         self.assertIn("Integrity checks", stale["error"])
+
+    def _wait_for_job(self, job_id: str) -> dict[str, object]:
+        for _ in range(100):
+            _, payload = self._request(f"/api/jobs/{job_id}")
+            if payload["job"]["status"] not in {"queued", "running"}:
+                return payload["job"]
+            time.sleep(0.03)
+        self.fail("job did not finish")
+
+    def test_auto_route_runs_analysis_job_and_ends_at_review(self) -> None:
+        # Regression: this route used to crash with
+        # "JobManager.start() missing 1 required keyword-only argument: 'metadata'".
+        status, payload = self._request(f"/api/projects/{PROJECT_ID}/auto", method="POST", body={})
+
+        self.assertEqual(status, 202)
+        job = self._wait_for_job(payload["job"]["job_id"])
+        self.assertEqual((job["action"], job["status"], job["progress"]), ("auto", "succeeded", 100))
+        self.assertEqual(self.application.project["state"], "REVIEW")
+        self.assertNotIn("outputs", self.application.project)
+
+    def test_auto_failure_is_reported_on_the_job(self) -> None:
+        self.application.auto_error = ApplicationError("Whisper model is not installed.")
+
+        _, payload = self._request(f"/api/projects/{PROJECT_ID}/auto", method="POST", body={})
+
+        job = self._wait_for_job(payload["job"]["job_id"])
+        self.assertEqual(job["status"], "failed")
+        self.assertIn("Whisper model is not installed", job["error"])
+
+    def test_auto_job_blocks_a_second_job_and_cannot_be_retried_as_render(self) -> None:
+        self.application.auto_gate = threading.Event()
+        _, payload = self._request(f"/api/projects/{PROJECT_ID}/auto", method="POST", body={})
+        status, second = self._request(f"/api/projects/{PROJECT_ID}/render", method="POST", body={})
+        self.application.auto_gate.set()
+        job = self._wait_for_job(payload["job"]["job_id"])
+
+        self.assertEqual(status, 400)
+        self.assertIn("already active", second["error"])
+        status, retry = self._request(f"/api/jobs/{job['job_id']}/retry", method="POST", body={})
+        self.assertEqual(status, 400)
+
+    def test_finished_auto_job_survives_restart_without_render_checks(self) -> None:
+        storage = Path(self.temp.name) / "task-jobs"
+        storage.mkdir()
+        manager = JobManager(storage)
+        job = manager.start_task(PROJECT_ID, "auto", lambda update: update("Working", 50))
+        for _ in range(100):
+            if manager.get(job["job_id"])["status"] == "succeeded":
+                break
+            time.sleep(0.03)
+
+        reloaded = JobManager(storage).get(job["job_id"])
+
+        self.assertEqual(reloaded["status"], "succeeded")
 
     def test_render_start_rejects_existing_attempt_output_directory(self) -> None:
         manager = JobManager()

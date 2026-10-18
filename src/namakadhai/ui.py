@@ -96,7 +96,11 @@ class JobManager:
                     completed_at_utc=self._now(),
                 )
                 self._persist(job)
-            elif job.get("status") == "succeeded" and not self._validate_completed_job(job):
+            elif (
+                job.get("status") == "succeeded"
+                and job.get("action", "render") == "render"
+                and not self._validate_completed_job(job)
+            ):
                 job.update(
                     status="failed",
                     stage="Previously successful render failed integrity checks",
@@ -305,6 +309,63 @@ class JobManager:
                         updated_at_utc=self._now(),
                     )
                     self._persist(current)
+
+        threading.Thread(target=run, name=f"namakadhai-{action}-{job_id[:8]}", daemon=True).start()
+        return dict(job)
+
+    def start_task(
+        self,
+        project_id: str,
+        action: str,
+        function: Callable[[Callable[[str, int], None]], Any],
+    ) -> dict[str, Any]:
+        """Run a tracked job that produces no media (e.g. auto analysis).
+
+        It shares the one-active-job-per-project rule, progress, persistence and
+        restart handling with renders, but has no outputs to validate.
+        """
+        job_id = uuid.uuid4().hex
+        job = {
+            "job_id": job_id, "attempt_id": None, "project_id": project_id,
+            "action": action, "status": "queued", "stage": "Queued", "progress": 0,
+            "cancel_requested": False, "message": None, "error": None,
+            "plan_path": None, "plan_sha256": None, "revision_id": None,
+            "requested_formats": [], "output_directory": None, "output_paths": [],
+            "retry_of_job_id": None, "created_at_utc": self._now(),
+            "updated_at_utc": self._now(), "completed_at_utc": None,
+        }
+        with self._lock:
+            if any(
+                existing["project_id"] == project_id
+                and existing["status"] in {"queued", "running", "cancel_pending"}
+                for existing in self._jobs.values()
+            ):
+                raise ApplicationError("Another job is already active for this project.")
+            self._jobs[job_id] = job
+            self._persist(job)
+
+        def update(stage: str, percent: int) -> None:
+            with self._lock:
+                current = self._jobs[job_id]
+                current.update(stage=stage, progress=max(0, min(100, int(percent))),
+                               updated_at_utc=self._now())
+                self._persist(current)
+
+        def run() -> None:
+            with self._lock:
+                self._jobs[job_id].update(status="running", stage="Starting",
+                                          updated_at_utc=self._now())
+                self._persist(self._jobs[job_id])
+            try:
+                function(update)
+            except Exception as exc:  # surfaced to the local user through the job endpoint
+                outcome = {"status": "failed", "stage": "Failed", "error": str(exc)}
+            else:
+                outcome = {"status": "succeeded", "stage": "Done"}
+            with self._lock:
+                self._jobs[job_id].update(progress=100, completed_at_utc=self._now(),
+                                          updated_at_utc=self._now(), **outcome)
+                self._persist(self._jobs[job_id])
 
         threading.Thread(target=run, name=f"namakadhai-{action}-{job_id[:8]}", daemon=True).start()
         return dict(job)
@@ -657,7 +718,7 @@ class EditorHandler(BaseHTTPRequestHandler):
                     self._json({"job": job}, HTTPStatus.ACCEPTED)
                     return
                 if action == "auto":
-                    job = self.server.jobs.start(
+                    job = self.server.jobs.start_task(
                         project_id,
                         "auto",
                         lambda update: self.server.application.run_auto(project_id, update),
