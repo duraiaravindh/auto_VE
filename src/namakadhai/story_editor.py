@@ -1394,6 +1394,7 @@ def render_story_edit(
     duration = float(payload["source"]["duration_seconds"])
     cuts = _approved_cuts(payload, decisions, duration)
     retained = _retained_ranges(cuts, duration)
+    removed_segments = _removed_segments(payload, decisions, _read_story_decision_actors(plan))
     profile = _get_profile(payload)
     transition_duration = (
         min(profile.transition_duration_seconds, MAX_SILENCE_CROSSFADE_SECONDS)
@@ -1621,6 +1622,7 @@ def render_story_edit(
                         "format": format_name,
                         "dimensions": [width, height],
                         "approved_cut_ranges_seconds": [list(item) for item in cuts],
+                        "removed_segments": removed_segments,
                         "retained_source_ranges_seconds": [
                             list(item) for item in retained
                         ],
@@ -1776,6 +1778,7 @@ def render_story_edit(
         "outputs": output_records,
         "source_sha256": snapshot.sha256,
         "approved_cuts": [list(item) for item in cuts],
+        "removed_segments": removed_segments,
         "caption_status": caption_status,
         "music_status": "APPROVED" if approved_music else (
             "PENDING_OR_REJECTED_OMITTED" if music_payload else "NOT_SUPPLIED"
@@ -2067,6 +2070,28 @@ def approve_story_exports(
             key: str(value) for key, value in final_paths.items()
         },
     }
+
+
+def _removed_segments(
+    payload: dict[str, Any], decisions: dict[str, str], actors: dict[str, str]
+) -> list[dict[str, Any]]:
+    """What each approved cut removes, why, and who approved it (auto or creator)."""
+    removed = []
+    for candidate in payload["candidates"]:
+        candidate_id = candidate.get("candidate_id")
+        if decisions.get(candidate_id) != "APPROVED":
+            continue
+        start, end = map(float, candidate["proposed_cut_seconds"])
+        removed.append({
+            "candidate_id": candidate_id,
+            "kind": candidate.get("kind", "silence"),
+            "confidence": candidate.get("confidence"),
+            "source_start_seconds": start,
+            "source_end_seconds": end,
+            "reason": candidate.get("reason"),
+            "decided_by": actors.get(candidate_id, "creator"),
+        })
+    return sorted(removed, key=lambda item: item["source_start_seconds"])
 
 
 def _read_story_decision_actors(plan: Path) -> dict[str, str]:

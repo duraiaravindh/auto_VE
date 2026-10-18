@@ -193,6 +193,62 @@ class ApplicationTests(unittest.TestCase):
         self.assertEqual(original.read_bytes(), b"raw recording")
 
     @patch("namakadhai.application.record_story_decision")
+    @patch("namakadhai.application.create_story_plan")
+    def test_auto_mode_pre_ticks_confident_cuts_and_stops_at_review(self, create_plan, decide):
+        app, record, _ = self._project_with_outputs("auto-story-123456")
+        directory = app.projects_root / "auto-story-123456"
+        (directory / "creative_profile.json").write_text(
+            json.dumps({"transition": {"kind": "fade"}}), encoding="utf-8"
+        )
+        captions = directory / "captions_aligned.json"
+        words = lambda text, start: [
+            {"text": t, "start": start + i * 0.3, "end": start + i * 0.3 + 0.25}
+            for i, t in enumerate(text.split())
+        ]
+        captions.write_text(json.dumps({"version": 1, "captions": [
+            {"text": "naan Durai idhu", "words": words("naan Durai idhu", 1.0)},
+            {"text": "naan Durai idhu Namma Kadhai", "words": words("naan Durai idhu Namma Kadhai", 2.5)},
+            {"text": "vera vera padatha", "words": words("vera vera padatha", 5.0)},
+        ]}), encoding="utf-8")
+        old_plan = Path(record["active_plan"])
+        payload = json.loads(old_plan.read_text(encoding="utf-8"))
+        payload["captions"] = {"path": str(captions)}
+        old_plan.write_text(json.dumps(payload), encoding="utf-8")
+        record["caption_alignment"] = {"aligned_word_count": 11}
+        (directory / "project.json").write_text(json.dumps(record), encoding="utf-8")
+
+        new_plan = self.root / "auto-plan" / "story_edit.json"
+        new_plan.parent.mkdir()
+        new_plan.write_text(json.dumps({
+            "source": {"path": str(self.source), "duration_seconds": 10},
+            "captions": {"path": str(captions)}, "title": None, "music": None,
+            "candidates": [
+                {"candidate_id": "silence-long", "source_start_seconds": 6.5, "source_end_seconds": 8.5,
+                 "proposed_cut_seconds": [6.75, 8.25]},
+                {"candidate_id": "silence-short", "source_start_seconds": 8.6, "source_end_seconds": 9.6,
+                 "proposed_cut_seconds": [8.85, 9.35]},
+            ],
+        }), encoding="utf-8")
+        (new_plan.parent / "approvals.jsonl").write_text("", encoding="utf-8")
+        create_plan.return_value = new_plan
+
+        project = app.run_auto("auto-story-123456")
+
+        decisions = {call.args[1]: (call.args[2], call.kwargs["actor"]) for call in decide.call_args_list}
+        retake = next(key for key in decisions if key.startswith("auto-retake-"))
+        doubling = next(key for key in decisions if key.startswith("auto-repeat-"))
+        self.assertEqual(decisions[retake], ("APPROVED", "auto"))
+        self.assertEqual(decisions[doubling], ("REJECTED", "auto"))
+        self.assertEqual(decisions["silence-long"], ("APPROVED", "auto"))
+        self.assertEqual(decisions["silence-short"], ("REJECTED", "auto"))
+        self.assertEqual(decisions["captions"], ("APPROVED", "auto"))
+        self.assertEqual(project["state"], "REVIEW")
+        self.assertIsNone(project["render_result"])
+        saved = json.loads(new_plan.read_text(encoding="utf-8"))
+        self.assertEqual(saved["automation"]["transcription"]["source"], "srt")
+        self.assertEqual(self.source.read_bytes(), b"immutable source")
+
+    @patch("namakadhai.application.record_story_decision")
     def test_decision_updates_record_without_changing_source(self, record_decision):
         app = ProjectApplication(self.settings)
         directory = app.projects_root / "my-story-123456"

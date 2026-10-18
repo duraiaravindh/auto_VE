@@ -14,7 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
-from namakadhai.auto_edit import FasterWhisperProvider, suggest_transcript_cuts
+from namakadhai.auto_edit import FasterWhisperProvider
+from namakadhai.auto_suggest import Word, suggest_cuts
 from namakadhai.caption_renderer import load_caption_cues
 from namakadhai.probe import probe_video
 from namakadhai.publishing import create_publishing_package
@@ -422,42 +423,73 @@ class ProjectApplication:
             }
             return response
 
+    def _auto_word_lines(
+        self, project_id: str, record: dict[str, Any], old_plan: dict[str, Any],
+        revision: int, callback: Callable[[str, int], None],
+    ) -> tuple[list[list[Word]], dict[str, Any], str | None]:
+        """Timed words to search for cuts, their source, and a caption file to keep.
+
+        A Whisper transcript of the real audio is preferred: it contains the
+        retakes a cleaned-up script leaves out. A word-timed SRT is the stopgap.
+        """
+        try:
+            provider = self.transcription_provider()
+            whisper_ready = bool(provider.status()["ready"])
+        except ApplicationError:  # no Whisper settings: fall back to the SRT
+            whisper_ready = False
+        existing_captions = (old_plan.get("captions") or {}).get("path")
+        if whisper_ready:
+            callback("Transcribing your audio locally with word timings", 8)
+            transcription = provider.transcribe(
+                Path(record["source"]["path"]), self._directory(project_id) / f"transcription_r{revision}"
+            )
+            transcript = json.loads(Path(transcription["transcript_path"]).read_text(encoding="utf-8"))
+            lines = [
+                [Word(str(w["text"]), float(w["start"]), float(w["end"])) for w in segment.get("words", [])]
+                for segment in transcript.get("segments", [])
+            ]
+            return lines, {"source": "whisper", **transcription}, existing_captions or transcription["captions_path"]
+        if existing_captions and record.get("caption_alignment"):
+            payload = json.loads(Path(existing_captions).read_text(encoding="utf-8"))
+            lines = [
+                [Word(str(w["text"]), float(w["start"]), float(w["end"])) for w in cue.get("words", [])]
+                for cue in payload.get("captions", [])
+            ]
+            return lines, {
+                "source": "srt",
+                "warning": "Retakes are only found if your SRT includes them; local Whisper is not set up.",
+            }, existing_captions
+        raise ApplicationError(
+            "Automatic cuts need your words with timings: add an SRT to the project, "
+            "or set up local Whisper. No download was attempted."
+        )
+
     def run_auto(
         self,
         project_id: str,
         progress: Callable[[str, int], None] | None = None,
     ) -> dict[str, Any]:
-        """Transcribe, create a fresh plan, label auto decisions, and render previews."""
+        """Suggest retake, repeat, filler and long-pause cuts and pre-tick the confident ones.
+
+        Ends at review: nothing is rendered or finalized here, every decision is
+        recorded with actor "auto", and you can change any of them.
+        """
         callback = progress or (lambda _stage, _percent: None)
         with self._lock:
             record = self._read(project_id)
-            if not record.get("preferences", {}).get("transcription_enabled"):
-                raise ApplicationError("Enable transcription for this project before running auto mode.")
-            if not record.get("preferences", {}).get("auto_mode"):
-                raise ApplicationError("Auto mode is not enabled for this project.")
+            if not record.get("active_plan"):
+                raise ApplicationError("Project has no active plan.")
             old_plan_path = Path(record["active_plan"])
             old_plan, _, _ = self._plan_state(old_plan_path)
-            record["state"] = "TRANSCRIBING"
+            record["state"] = "ANALYZING"
             record["last_error"] = None
             self._write(record)
         try:
-            provider = self.transcription_provider()
-            status = provider.status()
-            if not status["ready"]:
-                missing = []
-                if not status["dependency_installed"]:
-                    missing.append("faster-whisper package")
-                if not status["model_installed"]:
-                    missing.append(f"local {status['model']} model")
-                raise ApplicationError(
-                    "Auto transcription is enabled but not ready: missing " + " and ".join(missing) + ". No download was attempted."
-                )
-            callback("Transcribing locally with word timings", 8)
             revision = len(record["plan_revisions"]) + 1
-            transcription_dir = self._directory(project_id) / f"transcription_r{revision}"
-            transcription = provider.transcribe(Path(record["source"]["path"]), transcription_dir)
-            callback("Building Tanglish caption cues", 42)
-
+            lines, transcription, captions_path = self._auto_word_lines(
+                project_id, record, old_plan, revision, callback
+            )
+            callback("Finding retakes, repeats, fillers and long pauses", 45)
             profile_path = self._directory(project_id) / f"auto_profile_r{revision}.json"
             base_profile = json.loads((self._directory(project_id) / "creative_profile.json").read_text(encoding="utf-8"))
             # Automatic transcript-rule cuts are hard cuts. Topic-change fades remain
@@ -472,24 +504,30 @@ class ProjectApplication:
                 record["source"]["path"],
                 settings_path=self.settings_path,
                 profile_path=profile_path,
-                captions_path=transcription["captions_path"],
+                captions_path=captions_path,
                 title=(title_data.get("text") if isinstance(title_data, dict) else None),
                 music_path=(music_data.get("path") if isinstance(music_data, dict) else None),
             )
-            callback("Suggesting conservative filler and repeat cuts", 50)
             plan_payload = json.loads(new_plan.read_text(encoding="utf-8"))
-            transcript_candidates = suggest_transcript_cuts(
-                transcription["transcript_path"],
-                duration_seconds=float(record["source"]["metadata"]["duration_seconds"]),
-            )
-            existing_ranges = [tuple(item["proposed_cut_seconds"]) for item in plan_payload["candidates"]]
-            for candidate in transcript_candidates:
-                start, end = candidate["proposed_cut_seconds"]
-                if any(start < old_end and end > old_start for old_start, old_end in existing_ranges):
+            word_cuts = suggest_cuts(lines)
+            # Long pauses: the silence candidates keep padding on both sides, so a
+            # pause shrinks to a natural length instead of vanishing.
+            pauses = []
+            for candidate in plan_payload["candidates"]:
+                start, end = map(float, candidate["proposed_cut_seconds"])
+                if any(start < c["proposed_cut_seconds"][1] and end > c["proposed_cut_seconds"][0] for c in word_cuts):
                     continue
-                plan_payload["candidates"].append(candidate)
-                existing_ranges.append((start, end))
-            plan_payload["candidates"].sort(key=lambda item: item["proposed_cut_seconds"])
+                length = float(candidate["source_end_seconds"]) - float(candidate["source_start_seconds"])
+                confident = length >= 1.2
+                pauses.append({
+                    **candidate, "kind": "pause",
+                    "confidence": "high" if confident else "medium",
+                    "default_decision": "APPROVED" if confident else "REJECTED",
+                    "reason": f"Long pause ({length:.1f}s) shortened to a natural gap.",
+                })
+            plan_payload["candidates"] = sorted(
+                pauses + word_cuts, key=lambda item: item["proposed_cut_seconds"][0]
+            )
             plan_payload["automation"] = {
                 "mode": "auto",
                 "actor": "auto",
@@ -498,31 +536,19 @@ class ProjectApplication:
                 "transition_policy": "hard_cuts_only_until_topic_boundary_detection_is_tested",
             }
             self._write_plan_revision(new_plan, plan_payload)
-
-            intensity = record["preferences"].get("editing_intensity", "balanced")
             for candidate in plan_payload["candidates"]:
-                candidate_id = candidate["candidate_id"]
-                length = float(candidate["proposed_cut_seconds"][1]) - float(candidate["proposed_cut_seconds"][0])
-                transcript_rule = str(candidate_id).startswith("auto-")
-                approved = (
-                    (transcript_rule and intensity in {"balanced", "dynamic"})
-                    or (not transcript_rule and intensity == "balanced" and length >= 1.25)
-                    or (not transcript_rule and intensity == "dynamic" and length >= 0.8)
-                )
                 record_story_decision(
                     new_plan,
-                    candidate_id,
-                    "APPROVED" if approved else "REJECTED",
-                    note="Automatic rule decision; mandatory final human review remains.",
+                    candidate["candidate_id"],
+                    candidate["default_decision"],
+                    note=f"auto: {candidate['kind']}, {candidate['confidence']} confidence.",
                     actor="auto",
                 )
-            record_story_decision(
-                new_plan,
-                "captions",
-                "APPROVED",
-                note="Local faster-whisper Tanglish draft; uncertain cues omitted and reported.",
-                actor="auto",
-            )
+            if plan_payload.get("captions") is not None:
+                record_story_decision(
+                    new_plan, "captions", "APPROVED",
+                    note="auto: your captions, kept as they were.", actor="auto",
+                )
             if plan_payload.get("title") is not None:
                 record_story_decision(new_plan, "title", "APPROVED", note="User-supplied title.", actor="auto")
             if plan_payload.get("music") is not None:
@@ -533,7 +559,8 @@ class ProjectApplication:
                     note="Auto mode does not approve music licensing evidence.",
                     actor="auto",
                 )
-            callback("Rendering auto-approved preview revision", 58)
+            # Auto mode stops at review. Rendering goes through the normal tracked
+            # render attempt, so finalization sees a validated attempt as usual.
             with self._lock:
                 record = self._read(project_id)
                 record["active_plan"] = str(new_plan)
@@ -543,23 +570,18 @@ class ProjectApplication:
                 record["transcription"] = transcription
                 record["automation"] = plan_payload["automation"]
                 record["render_result"] = None
+                record["preview_reviews"] = {}
                 record["finalization"] = None
                 record["package"] = None
-                record["state"] = "AUTO_RENDERING"
-                self._write(record)
-            result = render_story_edit(new_plan, settings_path=self.settings_path)
-            callback("Validating auto previews", 94)
-            with self._lock:
-                record = self._read(project_id)
-                record["render_result"] = result
-                record["state"] = "PREVIEW_READY"
+                record["state"] = "REVIEW"
                 self._write(record)
                 self._event(
                     project_id,
-                    "AUTO_PREVIEWS_RENDERED",
-                    {"actor": "auto", "transcription": transcription, "outputs": len(result.get("outputs", []))},
+                    "AUTO_SUGGESTIONS_READY",
+                    {"actor": "auto", "plan_path": str(new_plan),
+                     "suggestions": len(plan_payload["candidates"])},
                 )
-            callback("Auto preview ready for mandatory human review", 100)
+            callback("Suggestions ready for your review", 100)
             return self.get_project(project_id)
         except Exception as exc:
             with self._lock:
