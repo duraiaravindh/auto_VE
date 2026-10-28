@@ -275,6 +275,8 @@ def build_aligned_captions(
         else:
             end = min(video_duration_seconds, last_word_end + hold_seconds)
         end = max(end, start + 0.05)
+        # Round down so neither the caption nor its words end past the video.
+        end = math.floor(end * 1000) / 1000
         word_entries = []
         for word, (word_start, word_end, score) in pairs:
             word_start = min(max(word_start, start), end)
@@ -289,7 +291,7 @@ def build_aligned_captions(
                 low_confidence.append(f"{word} @ {word_start:.2f}s")
         aligned.append(
             {
-                "start": round(start, 3), "end": round(end, 3), "text": cue["text"],
+                "start": round(start, 3), "end": end, "text": cue["text"],
                 "highlight": list(cue.get("highlight", [])), "uncertain": False,
                 "alignment": "forced_word_alignment", "words": word_entries,
             }

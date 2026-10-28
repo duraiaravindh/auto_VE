@@ -4,6 +4,45 @@ Local, free editing for Nama Kadhai videos: edit in OpenReel, then word-synced
 captions, Remotion title/outro cards and approval-gated landscape and vertical
 renders. Runs offline; the original recording is never modified.
 
+## Reference-style dynamic vertical video (no UI)
+
+Create the complete 1080x1920 edit from a video and reviewed SRT:
+
+    .\dynamic.ps1 test001.mp4 subtitles.srt
+
+Each run creates a new folder under `projects\dynamic\` containing 1080x1920
+vertical and 1920x1080 landscape review MP4s, short speech-activity-aligned
+captions, ASS subtitles, source-bound creative timelines, generated-asset
+catalogue, and validation reports. Use `-VerticalOnly` when only the reference-style
+vertical output is needed. The source video and SRT are never overwritten.
+
+The automatic edit trims silent handles, uses quick presenter cuts, split-screen,
+circular picture-in-picture, locally generated animated topic cards, sparse
+dialogue-triggered reaction marks, restrained flash/sweep transitions, procedural
+pop/whoosh/impact sounds, a full-screen closing card, bottom-positioned bold italic
+yellow captions with a dark outline,
+and a normalized voice mix.
+No stock media is downloaded. Supply an explicitly approved, hash-bound asset
+catalogue with `-Assets path\to\assets.json` to add licensed B-roll. Background
+Music is absent unless approved local files and provenance are provided. The three
+built-in sound effects are synthesized locally, deliberately quiet, and recorded
+in the same hash-bound asset catalogue as the graphics.
+
+Caption timing in this command is estimated from the SRT plus measured speech
+activity. It is more accurate than reusing paragraph timestamps, but is not
+phoneme-level forced alignment; the creator must watch the complete render before
+publishing. The timeline and render report deliberately retain
+`final_human_review: REQUIRED`.
+
+Optional free Pexels discovery is metadata-only and never downloads footage:
+
+    $env:PEXELS_API_KEY = "your-key"
+    $env:PYTHONPATH = "$PWD\src"
+    python -m namakadhai.pexels_client "Tamil festival television" --out pexels-results.json
+
+Review the Pexels licence and each candidate yourself, download only the selected
+clips, then add their paths, hashes, provenance, and approval to an asset catalogue.
+
 ## Setup (Windows)
     # Python 3.11+; FFmpeg/FFprobe go in tools/ (see config/settings.json).
     # Fonts (Poppins, Varela Round; SIL OFL) are bundled in fonts/.

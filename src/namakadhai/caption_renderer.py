@@ -90,6 +90,10 @@ class CaptionStyle:
     entrance_ms: int = 160
     bold: bool = False
     word_highlight: bool = False
+    keyword_scale_percent: int = 100
+    font_scale: float | None = None
+    margin_y_scale: float | None = None
+    italic: bool = False
 
 
 @dataclass(frozen=True)
@@ -236,6 +240,7 @@ def _highlight_line(
     highlights: tuple[str, ...],
     highlight_ass_color: str,
     normal_ass_color: str,
+    keyword_scale_percent: int = 100,
 ) -> str:
     terms = {term.casefold() for term in highlights}
     cursor = 0
@@ -244,16 +249,23 @@ def _highlight_line(
         word = match.group()
         output.append(_escape_ass_text(line[cursor : match.start()]))
         if word.casefold() in terms:
+            scale_on = (
+                f"\\fscx{keyword_scale_percent}\\fscy{keyword_scale_percent}"
+                if keyword_scale_percent != 100
+                else ""
+            )
             output.extend(
                 (
                     "{\\c",
                     highlight_ass_color,
                     "&",
+                    scale_on,
                     "}",
                     _escape_ass_text(word),
                     "{\\c",
                     normal_ass_color,
                     "&",
+                    "\\fscx100\\fscy100" if keyword_scale_percent != 100 else "",
                     "}",
                 )
             )
@@ -366,6 +378,23 @@ def build_ass(
         or style.entrance_ms < 0
     ):
         raise CaptionInputError("Caption entrance duration must be a non-negative integer.")
+    if (
+        isinstance(style.keyword_scale_percent, bool)
+        or not isinstance(style.keyword_scale_percent, int)
+        or not 100 <= style.keyword_scale_percent <= 160
+    ):
+        raise CaptionInputError("Keyword scale must be an integer from 100 to 160 percent.")
+    for label, value in (
+        ("font scale", style.font_scale),
+        ("vertical margin scale", style.margin_y_scale),
+    ):
+        if value is not None and (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or not 0.02 <= float(value) <= 0.35
+        ):
+            raise CaptionInputError(f"Caption {label} must be between 0.02 and 0.35.")
     if title_text is not None and (
         not isinstance(title_text, str) or not title_text.strip()
     ):
@@ -373,9 +402,19 @@ def build_ass(
     if not math.isfinite(title_duration_seconds) or title_duration_seconds <= 0:
         raise CaptionInputError("Title duration must be positive and finite.")
     layout_style = LAYOUTS[layout]
-    font_size = max(16, round(height * layout_style["font_scale"]))
+    font_scale = (
+        float(style.font_scale)
+        if style.font_scale is not None
+        else float(layout_style["font_scale"])
+    )
+    margin_y_scale = (
+        float(style.margin_y_scale)
+        if style.margin_y_scale is not None
+        else float(layout_style["margin_y_scale"])
+    )
+    font_size = max(16, round(height * font_scale))
     margin_x = round(width * layout_style["margin_x_scale"])
-    margin_y = round(height * layout_style["margin_y_scale"])
+    margin_y = round(height * margin_y_scale)
     primary = _rgb_to_ass(style.text_color)
     highlight = _rgb_to_ass(style.highlight_color)
     outline = _rgb_to_ass(style.outline_color)
@@ -394,7 +433,8 @@ def build_ass(
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: NamaKadhai,{style.font_name},{font_size},{primary},"
-        f"{primary},{outline},&H80000000,{-1 if style.bold else 0},0,0,0,100,100,0,0,1,"
+        f"{primary},{outline},&H80000000,{-1 if style.bold else 0},"
+        f"{-1 if style.italic else 0},0,0,100,100,0,0,1,"
         f"{style.outline_width:g},{style.shadow_depth:g},2,"
         f"{margin_x},{margin_x},{margin_y},1",
     ]
@@ -431,7 +471,13 @@ def build_ass(
             if style.word_highlight and cue.words
             else None
         ) or r"\N".join(
-            _highlight_line(line, cue.highlights, highlight, primary)
+            _highlight_line(
+                line,
+                cue.highlights,
+                highlight,
+                primary,
+                style.keyword_scale_percent,
+            )
             for line in wrapped
         )
         lines.append(

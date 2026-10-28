@@ -23,5 +23,13 @@ if ($Layout) { $arguments += @("--layout", $Layout) }
 if ($Original) { $arguments += @("--original", $Original) }
 if ($Intro) { $arguments += @("--intro", $Intro, "--intro-subtitle", $IntroSubtitle) }
 if ($Outro) { $arguments += @("--outro", $Outro, "--outro-subtitle", $OutroSubtitle) }
+$env:PYTHONUNBUFFERED = "1"
+# Warnings from PyTorch go to stderr; don't let PowerShell treat them as failures.
+$ErrorActionPreference = "Continue"
 & $python @arguments
-exit $LASTEXITCODE
+$code = $LASTEXITCODE
+if ($code -ne 0) {
+    Write-Host ""
+    Write-Host "Captioning stopped (exit code $code). Copy the lines above and share them to get it fixed." -ForegroundColor Red
+}
+exit $code

@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "asset_id": "festival-broll-01",
+      "kind": "video",
+      "path": "../assets/broll/festival-broll-01.mp4",
+      "sha256": null,
+      "approved": false,
+      "license": "RECORD EXACT LICENSE BEFORE APPROVAL",
+      "provider": "Pexels or local",
+      "source_url": "",
+      "attribution": "",
+      "tags": [
+        "festival",
+        "celebration"
+      ]
+    }
+  ]
+}

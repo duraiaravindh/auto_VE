@@ -838,6 +838,142 @@ class ProjectApplication:
             self._event(project_id, "CAPTIONS_REVISED", {"revision": revision, "cue_count": len(cues)})
             return self.get_project(project_id)
 
+    @staticmethod
+    def _validated_caption_style(preset_id: str, style: dict[str, Any]) -> dict[str, Any]:
+        """Validate the UI's renderer-compatible subtitle preset payload."""
+        if not re.fullmatch(r"[a-z0-9][a-z0-9-]{1,49}", preset_id):
+            raise ApplicationError("Subtitle design has an invalid identifier.")
+        if not isinstance(style, dict):
+            raise ApplicationError("Subtitle design must be a JSON object.")
+
+        expected = {
+            "font_name", "text_color", "highlight_color", "outline_color",
+            "outline_width", "shadow_depth", "fade_in_ms", "fade_out_ms",
+            "animation", "entrance_ms", "bold", "italic", "word_highlight",
+            "keyword_scale_percent", "font_scale", "margin_y_scale",
+        }
+        if set(style) != expected:
+            raise ApplicationError("Subtitle design contains missing or unsupported settings.")
+        if style["font_name"] not in {"Poppins", "Varela Round"}:
+            raise ApplicationError("Subtitle design must use a bundled open-source font.")
+        for key in ("text_color", "highlight_color", "outline_color"):
+            if not isinstance(style[key], str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", style[key]):
+                raise ApplicationError("Subtitle colours must use #RRGGBB format.")
+        for key in ("bold", "italic", "word_highlight"):
+            if not isinstance(style[key], bool):
+                raise ApplicationError(f"Subtitle setting {key} must be true or false.")
+        if style["animation"] not in {"fade", "pop"}:
+            raise ApplicationError("Subtitle animation must be fade or pop.")
+
+        numeric_ranges = {
+            "outline_width": (0.0, 10.0),
+            "shadow_depth": (0.0, 10.0),
+            "fade_in_ms": (0, 1000),
+            "fade_out_ms": (0, 1000),
+            "entrance_ms": (0, 1000),
+            "keyword_scale_percent": (100, 160),
+            "font_scale": (0.02, 0.15),
+            "margin_y_scale": (0.02, 0.25),
+        }
+        validated = dict(style)
+        for key, (minimum, maximum) in numeric_ranges.items():
+            value = style[key]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ApplicationError(f"Subtitle setting {key} must be numeric.")
+            number = float(value)
+            if not math.isfinite(number) or not minimum <= number <= maximum:
+                raise ApplicationError(
+                    f"Subtitle setting {key} must be between {minimum:g} and {maximum:g}."
+                )
+            if key in {"fade_in_ms", "fade_out_ms", "entrance_ms", "keyword_scale_percent"}:
+                if number != int(number):
+                    raise ApplicationError(f"Subtitle setting {key} must be a whole number.")
+                validated[key] = int(number)
+            else:
+                validated[key] = number
+        return validated
+
+    def update_caption_style(
+        self, project_id: str, preset_id: str, style: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Persist a subtitle design and create a fresh renderable plan revision."""
+        validated = self._validated_caption_style(preset_id, style)
+        with self._lock:
+            record = self._read(project_id)
+            if not record.get("active_plan"):
+                raise ApplicationError("Project has no active plan.")
+            directory = self._directory(project_id)
+            profile_path = directory / "creative_profile.json"
+            try:
+                original_profile_text = profile_path.read_text(encoding="utf-8")
+                profile = json.loads(original_profile_text)
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ApplicationError("Project creative profile is unreadable.") from exc
+            if not isinstance(profile, dict) or not isinstance(profile.get("caption"), dict):
+                raise ApplicationError("Project creative profile has no caption settings.")
+
+            profile["caption"] = validated
+            staged_profile = profile_path.with_name(f".{uuid.uuid4().hex}.caption-style.json")
+            try:
+                with staged_profile.open("x", encoding="utf-8", newline="") as output:
+                    json.dump(profile, output, ensure_ascii=False, indent=2)
+                    output.write("\n")
+                # Validate every profile field before changing the project's active file.
+                from namakadhai.story_editor import load_creative_profile
+
+                load_creative_profile(staged_profile)
+                os.replace(staged_profile, profile_path)
+
+                old_plan_path = Path(record["active_plan"])
+                old_plan, _, _ = self._plan_state(old_plan_path)
+                title_data = old_plan.get("title")
+                music_data = old_plan.get("music")
+                captions_data = old_plan.get("captions")
+                new_plan = create_story_plan(
+                    Path(record["source"]["path"]),
+                    settings_path=self.settings_path,
+                    profile_path=profile_path,
+                    captions_path=(
+                        Path(captions_data["path"])
+                        if isinstance(captions_data, dict) and captions_data.get("path")
+                        else None
+                    ),
+                    title=(title_data.get("text") if isinstance(title_data, dict) else None),
+                    music_path=(music_data.get("path") if isinstance(music_data, dict) else None),
+                )
+            except Exception:
+                staged_profile.unlink(missing_ok=True)
+                try:
+                    profile_path.write_text(original_profile_text, encoding="utf-8")
+                except OSError:
+                    pass
+                raise
+
+            revision = len(record["plan_revisions"]) + 1
+            record["active_plan"] = str(new_plan)
+            record["plan_revisions"].append(
+                {
+                    "revision": revision,
+                    "created_at_utc": _now(),
+                    "plan_path": str(new_plan),
+                    "reason": "caption_style_revision",
+                }
+            )
+            record["caption_style"] = {"preset_id": preset_id, "style": validated}
+            record["render_result"] = None
+            record["preview_reviews"] = {}
+            record["finalization"] = None
+            record["package"] = None
+            record["state"] = "REVIEW"
+            record["last_error"] = None
+            self._write(record)
+            self._event(
+                project_id,
+                "CAPTION_STYLE_UPDATED",
+                {"revision": revision, "preset_id": preset_id},
+            )
+            return self.get_project(project_id)
+
     def render(
         self,
         project_id: str,

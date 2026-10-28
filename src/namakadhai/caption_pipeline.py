@@ -27,6 +27,7 @@ from namakadhai.forced_align import PROJECT_ROOT, import_forced_aligned_srt
 from namakadhai.remotion_cards import RemotionCardError, render_card, validate_card_props
 from namakadhai.media_review import MediaReviewError, _resolve_ffmpeg, preflight_media
 from namakadhai.story_editor import load_creative_profile
+from namakadhai.srt_cleanup import clean_srt
 from namakadhai.subtitle_import import SubtitleImportError
 
 DEFAULT_PROFILE = PROJECT_ROOT / "config" / "nama_kadhai_nostalgic.json"
@@ -54,10 +55,12 @@ def caption_video(
     output_dir = output_root / f"{video.stem}-{stamp}"
     output_dir.mkdir(parents=True, exist_ok=False)
 
+    cleaned = output_dir / "subtitles_cleaned.srt"
+    cleanup = clean_srt(srt, cleaned)
     print("1/3 Aligning caption words to the speech...", flush=True)
     captions = output_dir / "captions.json"
     payload = import_forced_aligned_srt(
-        srt, original or video, captions,
+        cleaned, original or video, captions,
         ffmpeg_path=ffmpeg, video_duration_seconds=metadata.duration_seconds,
         edited_path=video if original else None,
     )
@@ -106,11 +109,32 @@ def caption_video(
             raise CaptionError("FFmpeg could not join the cards. " + result.stderr[-400:])
 
     report = payload["source"]["alignment"]
+    report["srt_cleanup"] = cleanup
+    report["uncaptioned_speech"] = _uncaptioned_speech(
+        original or video, ffmpeg, payload["captions"], metadata.duration_seconds
+    )
     (output_dir / "alignment_report.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return {"folder": output_dir, "captions": captions, "ass": ass, "video": final,
             "report": report}
+
+
+def _uncaptioned_speech(media: Path, ffmpeg: Path, captions: list, duration: float) -> list:
+    """Stretches of speech (>= 2 s) after the last caption or in long caption gaps."""
+    from namakadhai.subtitle_import import detect_speech_activity, measure_speech_envelope
+
+    active = detect_speech_activity(measure_speech_envelope(media, ffmpeg))
+    covered = [(c["start"], c["end"]) for c in captions]
+    gaps, previous_end = [], 0.0
+    for start, end in covered + [(duration, duration)]:
+        if start - previous_end >= 2.0:
+            speech = sum(active[int(previous_end * 100):int(start * 100)]) / 100
+            if speech >= 2.0:
+                gaps.append({"from_seconds": round(previous_end, 1), "to_seconds": round(start, 1),
+                             "speech_seconds": round(speech, 1)})
+        previous_end = max(previous_end, end)
+    return gaps
 
 
 def build_join_command(
@@ -185,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
             intro=(arguments.intro, arguments.intro_subtitle) if arguments.intro else None,
             outro=(arguments.outro, arguments.outro_subtitle) if arguments.outro else None,
         )
-    except (SubtitleImportError, CaptionError, MediaReviewError, RemotionCardError,
+    except (ValueError, SubtitleImportError, CaptionError, MediaReviewError, RemotionCardError,
             FileNotFoundError, OSError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
@@ -196,6 +220,14 @@ def main(argv: list[str] | None = None) -> int:
     if report["low_confidence_words"]:
         print("Check these spots (text may not match the speech): "
               + ", ".join(report["low_confidence_words"]))
+    cleanup = report.get("srt_cleanup", {})
+    if cleanup.get("junk_lines_removed"):
+        print(f"Removed {cleanup['junk_lines_removed']} junk lines from the SRT (numbers/timestamps shown as text).")
+    if cleanup.get("tamil_words_transliterated"):
+        print("Tamil script written in English letters: " + ", ".join(cleanup["tamil_words_transliterated"]))
+    for gap in report.get("uncaptioned_speech", []):
+        print(f"WARNING: speech with no caption from {gap['from_seconds']}s to {gap['to_seconds']}s "
+              f"(~{gap['speech_seconds']}s of talking). Your SRT may be missing lines there.")
     if report.get("edit", {}).get("lines_cut_in_edit"):
         print("Lines cut in the edit (no caption): " + " | ".join(report["edit"]["lines_cut_in_edit"]))
     return 0

@@ -707,6 +707,17 @@ class EditorHandler(BaseHTTPRequestHandler):
                     )
                     self._json({"project": project})
                     return
+                if action == "captions/style":
+                    style = body.get("style")
+                    if not isinstance(style, dict):
+                        raise ApplicationError("Subtitle design must be a JSON object.")
+                    project = self.server.application.update_caption_style(
+                        project_id,
+                        str(body.get("preset_id", "")),
+                        style,
+                    )
+                    self._json({"project": project})
+                    return
                 if action == "previews/review":
                     project = self.server.application.record_preview_review(
                         project_id, str(body.get("format", ""))

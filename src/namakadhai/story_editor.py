@@ -146,6 +146,17 @@ def load_creative_profile(path: str | Path | None = None) -> tuple[CreativeProfi
                 entrance_ms=int(caption.get("entrance_ms", 160)),
                 bold=bool(caption.get("bold", False)),
                 word_highlight=bool(caption.get("word_highlight", False)),
+                italic=bool(caption.get("italic", False)),
+                font_scale=(
+                    float(caption["font_scale"])
+                    if caption.get("font_scale") is not None
+                    else None
+                ),
+                margin_y_scale=(
+                    float(caption["margin_y_scale"])
+                    if caption.get("margin_y_scale") is not None
+                    else None
+                ),
             ),
             warmth=float(picture["warmth"]),
             saturation=float(picture["saturation"]),
