@@ -19,6 +19,7 @@ SILENCE_START = re.compile(r"silence_start:\s*(-?\d+(?:\.\d+)?)")
 SILENCE_END = re.compile(
     r"silence_end:\s*(-?\d+(?:\.\d+)?).*?silence_duration:\s*(-?\d+(?:\.\d+)?)"
 )
+EMBEDDED_TIMING = re.compile(r"^\s*(.+?)\s*-->\s*(.+?)\s*$")
 
 
 class SubtitleImportError(RuntimeError):
@@ -40,6 +41,45 @@ def parse_srt_time(value: str) -> float:
             raise SubtitleImportError(f"Invalid legacy subtitle time: {value}")
         return minutes * 60 + seconds + milliseconds / 1000
     raise SubtitleImportError(f"Unsupported subtitle time: {value}")
+
+
+def _unwrap_nested_srt(cues: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    """Recover an SRT accidentally exported as numbered/timed subtitle text.
+
+    Some caption tools turn each original SRT entry into three new cues: one
+    containing the original index, one containing the original timing line,
+    and one containing the dialogue. Recovery is deliberately strict so normal
+    dialogue containing a number or arrow can never be silently rewritten.
+    """
+    if len(cues) < 3 or len(cues) % 3:
+        return None
+    recovered: list[dict[str, Any]] = []
+    previous_end = 0.0
+    for offset in range(0, len(cues), 3):
+        number_text = str(cues[offset]["text"]).strip()
+        timing_text = str(cues[offset + 1]["text"]).strip()
+        dialogue = str(cues[offset + 2]["text"]).strip()
+        expected_number = offset // 3 + 1
+        timing = EMBEDDED_TIMING.fullmatch(timing_text)
+        if number_text != str(expected_number) or timing is None or not dialogue:
+            return None
+        try:
+            start = parse_srt_time(timing.group(1))
+            end = parse_srt_time(timing.group(2))
+        except SubtitleImportError:
+            return None
+        if end <= start or start < previous_end - 0.001:
+            return None
+        recovered.append(
+            {
+                "start": start,
+                "end": end,
+                "text": dialogue,
+                "source_format": "nested_srt_recovered",
+            }
+        )
+        previous_end = end
+    return recovered
 
 
 def parse_srt(path: str | Path) -> list[dict[str, Any]]:
@@ -67,7 +107,7 @@ def parse_srt(path: str | Path) -> list[dict[str, Any]]:
         previous_end = end
     if not cues:
         raise SubtitleImportError("Subtitle file contains no cues.")
-    return cues
+    return _unwrap_nested_srt(cues) or cues
 
 
 def detect_speech_pauses(
@@ -288,6 +328,15 @@ def import_reviewed_srt(
 
 FRAME_SECONDS = 0.01
 VOWEL_GROUP = re.compile(r"[aeiouy]+")
+CAPTION_TOKEN = re.compile(r"\S+")
+CAPTION_STOP_WORDS = frozenset(
+    {
+        "a", "an", "and", "are", "as", "at", "be", "but", "by", "for", "from",
+        "in", "is", "it", "of", "on", "or", "so", "the", "to", "was", "we", "with",
+        "aa", "aana", "adhu", "andha", "dhaan", "dhan", "enna", "indha", "la", "le",
+        "na", "naa", "nu", "oru", "pa", "paarunga", "um", "vandhu",
+    }
+)
 
 
 def measure_speech_envelope(
@@ -381,6 +430,150 @@ def _spoken_weight(text: str) -> float:
         digits = sum(character.isdigit() for character in letters)
         total += max(1, len(VOWEL_GROUP.findall(letters)) + 2 * digits) + 0.25
     return max(total, 1.0)
+
+
+def _short_caption_groups(
+    words: list[str], *, maximum_words: int, maximum_characters: int
+) -> list[list[str]]:
+    """Group words into compact social-video captions without changing order."""
+    groups: list[list[str]] = []
+    current: list[str] = []
+    for word in words:
+        candidate = " ".join((*current, word))
+        if current and (
+            len(current) >= maximum_words or len(candidate) > maximum_characters
+        ):
+            groups.append(current)
+            current = []
+        current.append(word)
+        if re.search(r"[.!?…]$", word):
+            groups.append(current)
+            current = []
+    if current:
+        groups.append(current)
+    return groups
+
+
+def _caption_highlight(words: list[str]) -> list[str]:
+    """Choose one readable emphasis word; this is styling, not text rewriting."""
+    candidates = []
+    for word in words:
+        normalized = re.sub(r"[^A-Za-z0-9]", "", word).casefold()
+        if normalized and normalized not in CAPTION_STOP_WORDS:
+            candidates.append((len(normalized), word))
+    return [max(candidates)[1]] if candidates else []
+
+
+def make_short_word_timed_captions(
+    cues: list[dict[str, Any]],
+    active: list[bool],
+    *,
+    video_duration_seconds: float,
+    maximum_words: int = 5,
+    maximum_characters: int = 30,
+    minimum_duration_seconds: float = 0.32,
+    hold_seconds: float = 0.12,
+    highlight_every: int = 3,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Split aligned paragraph cues into short cues with measured speech timing.
+
+    Word positions are estimated over speech-active 10 ms frames inside each
+    already aligned cue. This is a deterministic fallback when a forced aligner
+    is unavailable; the report labels the result honestly for creator review.
+    """
+    if maximum_words < 1 or maximum_words > 8:
+        raise SubtitleImportError("maximum_words must be between 1 and 8.")
+    if maximum_characters < 8 or maximum_characters > 48:
+        raise SubtitleImportError("maximum_characters must be between 8 and 48.")
+    output: list[dict[str, Any]] = []
+    estimated_words = 0
+    for source_index, cue in enumerate(cues):
+        words = CAPTION_TOKEN.findall(str(cue["text"]))
+        if not words:
+            continue
+        cue_start = max(0.0, float(cue["start"]))
+        cue_end = min(video_duration_seconds, float(cue["end"]))
+        if cue_end <= cue_start:
+            continue
+        first_frame = max(0, math.floor(cue_start / FRAME_SECONDS))
+        last_frame = min(len(active), math.ceil(cue_end / FRAME_SECONDS))
+        speech_frames = [
+            frame for frame in range(first_frame, last_frame)
+            if active[frame]
+        ]
+        if not speech_frames:
+            speech_frames = list(range(first_frame, max(first_frame + 1, last_frame)))
+
+        weights = [_spoken_weight(word) for word in words]
+        cumulative = [0.0]
+        for weight in weights:
+            cumulative.append(cumulative[-1] + weight)
+
+        def boundary(weight: float) -> float:
+            fraction = 0.0 if cumulative[-1] <= 0 else weight / cumulative[-1]
+            position = min(
+                len(speech_frames) - 1,
+                max(0, round(fraction * (len(speech_frames) - 1))),
+            )
+            return min(cue_end, max(cue_start, speech_frames[position] * FRAME_SECONDS))
+
+        word_entries = []
+        for index, word in enumerate(words):
+            start = boundary(cumulative[index])
+            end = boundary(cumulative[index + 1])
+            if index + 1 == len(words):
+                end = max(end, min(cue_end, end + hold_seconds))
+            end = min(cue_end, max(start + 0.01, end))
+            word_entries.append(
+                {"text": word, "start": round(start, 3), "end": round(end, 3),
+                 "confidence": None}
+            )
+        estimated_words += len(word_entries)
+
+        groups = _short_caption_groups(
+            words, maximum_words=maximum_words,
+            maximum_characters=maximum_characters,
+        )
+        cursor = 0
+        for group in groups:
+            group_words = word_entries[cursor : cursor + len(group)]
+            cursor += len(group)
+            start = group_words[0]["start"]
+            end = min(cue_end, max(group_words[-1]["end"] + hold_seconds, start + minimum_duration_seconds))
+            if output and start < output[-1]["end"]:
+                output[-1]["end"] = round(max(output[-1]["start"] + 0.05, start), 3)
+            highlight = (
+                _caption_highlight(group)
+                if highlight_every > 0 and len(output) % highlight_every == 1
+                else []
+            )
+            output.append(
+                {
+                    "start": round(start, 3),
+                    "end": round(end, 3),
+                    "text": " ".join(group),
+                    "highlight": highlight,
+                    "uncertain": False,
+                    "alignment": "speech_activity_word_estimate",
+                    "source_cue_index": source_index,
+                    "words": group_words,
+                }
+            )
+    for previous, current in zip(output, output[1:]):
+        if previous["end"] > current["start"]:
+            previous["end"] = current["start"]
+        previous["words"][-1]["end"] = min(previous["words"][-1]["end"], previous["end"])
+    if not output:
+        raise SubtitleImportError("No short captions could be created from the aligned text.")
+    return output, {
+        "method": "speech_activity_weighted_word_estimate",
+        "caption_count": len(output),
+        "estimated_word_count": estimated_words,
+        "maximum_words": maximum_words,
+        "maximum_characters": maximum_characters,
+        "review_required": True,
+        "warning": "Word timing is estimated from signal-level speech activity; review against speech.",
+    }
 
 
 def align_cues_to_speech_activity(

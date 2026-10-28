@@ -20,8 +20,8 @@ from namakadhai.media_review import (
 )
 
 DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parents[2] / "config" / "settings.json"
-DEFAULT_MAX_LINES = 2
-CAPTION_ANIMATIONS = ("pop", "fade")
+DEFAULT_MAX_LINES = 3
+CAPTION_ANIMATIONS = ("pop", "fade", "none")
 LAYOUTS = {
     "landscape": {
         "font_scale": 0.05,
@@ -90,6 +90,18 @@ class CaptionStyle:
     entrance_ms: int = 160
     bold: bool = False
     word_highlight: bool = False
+    keyword_scale_percent: int = 100
+    font_scale: float | None = None
+    margin_y_scale: float | None = None
+    italic: bool = False
+    # Placement chosen in the studio: horizontal centre of the caption (0-1).
+    pos_x_scale: float = 0.5
+    # Box style: a filled box behind the text instead of an outline.
+    box: bool = False
+    box_color: str = "#000000"
+    box_opacity: float = 0.6
+    uppercase: bool = False
+    letter_spacing: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -225,8 +237,8 @@ def _wrap_caption(text: str, width: int) -> tuple[str, ...]:
         return ()
     if len(lines) > DEFAULT_MAX_LINES:
         raise CaptionInputError(
-            "A caption exceeds two lines at the selected layout width; "
-            "split it into naturally timed sentence-sized cues."
+            "A caption needs more than three lines at this size; "
+            "make the font smaller or the SRT lines shorter."
         )
     return tuple(lines)
 
@@ -236,6 +248,7 @@ def _highlight_line(
     highlights: tuple[str, ...],
     highlight_ass_color: str,
     normal_ass_color: str,
+    keyword_scale_percent: int = 100,
 ) -> str:
     terms = {term.casefold() for term in highlights}
     cursor = 0
@@ -244,16 +257,23 @@ def _highlight_line(
         word = match.group()
         output.append(_escape_ass_text(line[cursor : match.start()]))
         if word.casefold() in terms:
+            scale_on = (
+                f"\\fscx{keyword_scale_percent}\\fscy{keyword_scale_percent}"
+                if keyword_scale_percent != 100
+                else ""
+            )
             output.extend(
                 (
                     "{\\c",
                     highlight_ass_color,
                     "&",
+                    scale_on,
                     "}",
                     _escape_ass_text(word),
                     "{\\c",
                     normal_ass_color,
                     "&",
+                    "\\fscx100\\fscy100" if keyword_scale_percent != 100 else "",
                     "}",
                 )
             )
@@ -275,13 +295,18 @@ def _cue_animation_tags(
     duration_ms = max(1, round((cue.end_seconds - cue.start_seconds) * 1000))
     fade_in = min(style.fade_in_ms, duration_ms // 3)
     fade_out = min(style.fade_out_ms, duration_ms // 3)
+    x = round(width * style.pos_x_scale)
     if style.animation == "fade":
-        return f"\\fad({fade_in},{fade_out})\\fscx98\\fscy98\\t(0,120,\\fscx100\\fscy100)"
+        return (
+            f"\\an2\\pos({x},{baseline_y})"
+            f"\\fad({fade_in},{fade_out})\\fscx98\\fscy98\\t(0,120,\\fscx100\\fscy100)"
+        )
+    if style.animation == "none":
+        return f"\\an2\\pos({x},{baseline_y})"
     # "pop": rise a few pixels while scaling up with a slight overshoot, then
     # fade out at the end of the cue. Text stays sharp so it is readable at once.
     entrance = min(style.entrance_ms, duration_ms // 2)
     overshoot = round(entrance * 0.6)
-    x = width // 2
     rise = max(4, round(height * 0.008))
     return (
         f"\\an2\\move({x},{baseline_y + rise},{x},{baseline_y},0,{entrance})"
@@ -366,6 +391,27 @@ def build_ass(
         or style.entrance_ms < 0
     ):
         raise CaptionInputError("Caption entrance duration must be a non-negative integer.")
+    if (
+        isinstance(style.keyword_scale_percent, bool)
+        or not isinstance(style.keyword_scale_percent, int)
+        or not 100 <= style.keyword_scale_percent <= 160
+    ):
+        raise CaptionInputError("Keyword scale must be an integer from 100 to 160 percent.")
+    for label, value in (
+        ("font scale", style.font_scale),
+        ("vertical margin scale", style.margin_y_scale),
+    ):
+        if value is not None and (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(float(value))
+            or not 0.0 <= float(value) <= 0.95
+        ):
+            raise CaptionInputError(f"Caption {label} must be between 0 and 0.95.")
+    if not 0.05 <= float(style.pos_x_scale) <= 0.95:
+        raise CaptionInputError("Caption horizontal position must be between 0.05 and 0.95.")
+    if not 0.0 <= float(style.box_opacity) <= 1.0:
+        raise CaptionInputError("Box opacity must be between 0 and 1.")
     if title_text is not None and (
         not isinstance(title_text, str) or not title_text.strip()
     ):
@@ -373,12 +419,28 @@ def build_ass(
     if not math.isfinite(title_duration_seconds) or title_duration_seconds <= 0:
         raise CaptionInputError("Title duration must be positive and finite.")
     layout_style = LAYOUTS[layout]
-    font_size = max(16, round(height * layout_style["font_scale"]))
+    font_scale = (
+        float(style.font_scale)
+        if style.font_scale is not None
+        else float(layout_style["font_scale"])
+    )
+    margin_y_scale = (
+        float(style.margin_y_scale)
+        if style.margin_y_scale is not None
+        else float(layout_style["margin_y_scale"])
+    )
+    font_size = max(12, round(height * font_scale))
     margin_x = round(width * layout_style["margin_x_scale"])
-    margin_y = round(height * layout_style["margin_y_scale"])
+    # Wrap to what fits across the frame at this font size (average glyph ~0.55 em).
+    usable = width - 2 * margin_x
+    wrap_width = max(8, int(usable / (font_size * (0.55 + style.letter_spacing / 100))))
+    margin_y = round(height * margin_y_scale)
     primary = _rgb_to_ass(style.text_color)
     highlight = _rgb_to_ass(style.highlight_color)
     outline = _rgb_to_ass(style.outline_color)
+    if style.box:
+        alpha = round((1 - float(style.box_opacity)) * 255)
+        box_colour = f"&H{alpha:02X}" + _rgb_to_ass(style.box_color)[4:]
 
     lines = [
         "[Script Info]",
@@ -394,8 +456,12 @@ def build_ass(
         "ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding",
         f"Style: NamaKadhai,{style.font_name},{font_size},{primary},"
-        f"{primary},{outline},&H80000000,{-1 if style.bold else 0},0,0,0,100,100,0,0,1,"
-        f"{style.outline_width:g},{style.shadow_depth:g},2,"
+        f"{primary},{box_colour if style.box else outline},"
+        f"{box_colour if style.box else '&H80000000'},{-1 if style.bold else 0},"
+        f"{-1 if style.italic else 0},0,0,100,100,{style.letter_spacing:g},0,"
+        f"{3 if style.box else 1},"
+        f"{max(style.outline_width, font_size * 0.18) if style.box else style.outline_width:g},"
+        f"{0 if style.box else style.shadow_depth:g},2,"
         f"{margin_x},{margin_x},{margin_y},1",
     ]
     if title_text is not None:
@@ -423,7 +489,14 @@ def build_ass(
             f"{{\\fad(180,260)}}{title_text_ass}"
         )
     for cue in cues:
-        wrapped = _wrap_caption(cue.text, int(layout_style["wrap_width"]))
+        if style.uppercase:
+            cue = CaptionCue(
+                cue.start_seconds, cue.end_seconds, cue.text.upper(), cue.highlights,
+                cue.uncertain,
+                tuple(CaptionWord(w.text.upper(), w.start_seconds, w.end_seconds,
+                                  w.confidence, w.original) for w in cue.words),
+            )
+        wrapped = _wrap_caption(cue.text, wrap_width)
         if not wrapped:
             raise CaptionInputError("Caption text must not be empty.")
         caption_text = (
@@ -431,7 +504,13 @@ def build_ass(
             if style.word_highlight and cue.words
             else None
         ) or r"\N".join(
-            _highlight_line(line, cue.highlights, highlight, primary)
+            _highlight_line(
+                line,
+                cue.highlights,
+                highlight,
+                primary,
+                style.keyword_scale_percent,
+            )
             for line in wrapped
         )
         lines.append(

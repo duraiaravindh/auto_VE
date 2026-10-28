@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Caption Studio</title>
+<style>
+  :root {
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#2a2f3a; --ink:#eef1f6; --muted:#8e97a8;
+    --accent:#f5c542; --accent-ink:#1a1505; --ok:#4fd18b; --bad:#ff6b6b; --radius:12px;
+  }
+  [hidden] { display:none !important }
+  * { box-sizing:border-box }
+  html, body { height:100% }
+  body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.45 "Segoe UI",system-ui,sans-serif; display:flex; flex-direction:column }
+  header { display:flex; align-items:center; gap:14px; padding:12px 22px; border-bottom:1px solid var(--line); background:var(--panel) }
+  .logo { width:30px; height:30px; border-radius:8px; background:var(--accent); color:var(--accent-ink); display:grid; place-items:center; font-weight:800 }
+  header h1 { font-size:16px; margin:0; letter-spacing:.01em }
+  .steps { display:flex; gap:6px; margin-left:auto }
+  .steps span { font-size:12px; color:var(--muted); padding:4px 10px; border-radius:20px; border:1px solid var(--line) }
+  .steps span.done { color:var(--ok); border-color:#245c3d } .steps span.now { color:var(--accent-ink); background:var(--accent); border-color:var(--accent) }
+  .app { flex:1; display:grid; grid-template-columns:minmax(0,1fr) 400px; min-height:0 }
+  @media (max-width: 1000px) { .app { grid-template-columns:1fr } aside { border-left:0; border-top:1px solid var(--line) } }
+
+  /* ---------- left: preview ---------- */
+  .left { padding:18px 22px; overflow:auto; display:flex; flex-direction:column; gap:14px }
+  #stage { position:relative; flex:none; height:min(66vh, 720px); background:#05060a; border-radius:var(--radius); overflow:hidden; display:flex; align-items:center; justify-content:center; border:1px solid var(--line) }
+  #stage video { max-width:100%; max-height:100%; display:block }
+  #empty { text-align:center; color:var(--muted); padding:30px; border:2px dashed var(--line); border-radius:var(--radius); margin:24px; width:calc(100% - 48px); height:calc(100% - 48px); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; transition:border-color .15s }
+  #empty.over, .drop.over { border-color:var(--accent); color:var(--ink) }
+  #empty b { color:var(--ink); font-size:17px }
+  #cap { position:absolute; transform:translate(-50%,-100%); cursor:grab; text-align:center; white-space:pre-line; user-select:none; padding:0 .25em; line-height:1.2; max-width:90%; touch-action:none; transition:outline-color .1s }
+  #cap:hover { outline:1px dashed rgba(245,197,66,.6); outline-offset:4px }
+  #cap.dragging { cursor:grabbing; outline:1px dashed var(--accent); outline-offset:4px }
+  .under { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:13px }
+  .under span { flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin:0 0 10px; display:flex; justify-content:space-between; align-items:center }
+  #cueList { max-height:300px; overflow:auto; border:1px solid var(--line); border-radius:8px; margin-top:10px }
+  .cue { display:grid; grid-template-columns:104px 1fr auto; gap:10px; align-items:center; padding:7px 10px; border-bottom:1px solid var(--line); font-size:13px; cursor:pointer }
+  .cue:hover { background:var(--panel2) } .cue.now { background:#3a3320 } .cue.low .t { color:var(--bad); font-weight:600 }
+  .cue .t { font:12px Consolas,monospace; color:var(--muted) }
+  .cue .b { display:flex; gap:4px } .cue .b button { padding:3px 7px; font-size:11px }
+  #result video { width:100%; max-height:60vh; border-radius:8px; background:#000; margin-top:10px }
+  code { font:12px Consolas,monospace; color:var(--muted); word-break:break-all }
+
+  /* ---------- right: controls ---------- */
+  aside { border-left:1px solid var(--line); background:var(--panel); display:flex; flex-direction:column; min-height:0 }
+  .scroll { flex:1; overflow:auto; padding:16px 18px }
+  .group { margin-bottom:18px }
+  .group > h3 { font-size:12px; text-transform:uppercase; letter-spacing:.09em; color:var(--muted); margin:0 0 8px }
+  label { display:block; color:var(--muted); font-size:12px; margin:10px 0 4px }
+  input[type=text], select { width:100%; background:#0f1218; color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font:inherit }
+  input[type=range] { width:100%; accent-color:var(--accent) }
+  input[type=color] { width:100%; height:34px; border:1px solid var(--line); border-radius:8px; background:#0f1218; padding:2px }
+  input[type=checkbox] { accent-color:var(--accent) }
+  .row { display:flex; gap:10px } .row > * { flex:1 }
+  .checks { display:grid; grid-template-columns:1fr 1fr; gap:6px 10px; margin-top:10px }
+  .checks label { display:flex; gap:7px; align-items:center; margin:0; color:var(--ink); font-size:13px }
+  button { background:var(--panel2); color:var(--ink); border:1px solid var(--line); border-radius:8px; padding:7px 12px; font:inherit; cursor:pointer }
+  button:hover:not(:disabled) { border-color:var(--accent) } button:disabled { opacity:.4; cursor:default }
+  .drop { display:flex; align-items:center; gap:10px; border:1.5px dashed var(--line); border-radius:10px; padding:10px 12px; color:var(--muted); cursor:pointer; position:relative; margin-bottom:8px }
+  .drop .ico { width:30px; height:30px; border-radius:8px; background:var(--panel2); display:grid; place-items:center; flex:none }
+  .drop.done { border-style:solid; border-color:#245c3d; color:var(--ink) } .drop.done .ico { background:#173a28; color:var(--ok) }
+  .drop input { position:absolute; inset:0; opacity:0; cursor:pointer }
+  .hint { color:var(--muted); font-size:12px; margin-top:6px }
+  .tabs { display:flex; gap:4px; background:#0f1218; padding:4px; border-radius:10px; margin-bottom:12px }
+  .tabs button { flex:1; border:0; background:transparent; color:var(--muted); padding:7px } .tabs button.on { background:var(--panel2); color:var(--ink) }
+  #presets { display:grid; grid-template-columns:repeat(3,1fr); gap:8px }
+  #presets button { padding:0; overflow:hidden; text-align:center }
+  #presets button .sw { display:block; height:44px; display:grid; place-items:center; font:700 18px Poppins,"Segoe UI",sans-serif; background:#2b3f52 linear-gradient(160deg,#3a5468,#20303d) }
+  #presets button .nm { display:block; font-size:11px; color:var(--muted); padding:5px 2px }
+  #presets button.on { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) }
+  #fontList { height:290px; overflow:auto; border:1px solid var(--line); border-radius:8px; margin-top:8px }
+  #fontList div { padding:7px 12px; cursor:pointer; font-size:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border-bottom:1px solid #1d2129 }
+  #fontList div:hover { background:var(--panel2) } #fontList div.on { background:#3a3320; color:var(--accent) }
+  #fontList small { font:11px "Segoe UI",sans-serif; color:var(--muted); margin-left:8px }
+  .snap { display:grid; grid-template-columns:repeat(3,1fr); gap:8px }
+  .pad { position:relative; aspect-ratio:9/16; max-height:220px; margin:12px auto 0; border:1px solid var(--line); border-radius:8px; background:#0f1218 }
+  .pad i { position:absolute; width:46%; height:6px; border-radius:3px; background:var(--accent); transform:translate(-50%,-100%) }
+  footer.render { border-top:1px solid var(--line); padding:14px 18px; background:var(--panel) }
+  .primary { width:100%; background:var(--accent); color:var(--accent-ink); border-color:var(--accent); font-weight:700; padding:12px; font-size:15px }
+  .primary:hover:not(:disabled) { filter:brightness(1.05) }
+  .bar { height:5px; background:#0f1218; border-radius:3px; overflow:hidden; margin-top:10px } .bar i { display:block; height:100%; width:0; background:var(--accent); transition:width .4s }
+  #status { font-size:13px; margin-top:8px; min-height:18px }
+  #log { white-space:pre-wrap; font:11px Consolas,monospace; color:var(--muted); max-height:90px; overflow:auto; margin-top:6px }
+  .ok { color:var(--ok) } .bad { color:var(--bad) } a { color:var(--accent) }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Cc</div><h1>Caption Studio</h1>
+  <div class="steps"><span id="st1" class="now">1 Files</span><span id="st2">2 Style &amp; place</span><span id="st3">3 Sync check</span><span id="st4">4 Render</span></div>
+</header>
+<div class="app">
+  <div class="left">
+    <div id="stage">
+      <div id="empty"><b>Drop your video here</b><span>or use "Choose video" on the right. Vertical and horizontal both work.</span></div>
+      <video id="video" controls playsinline hidden></video>
+      <div id="cap" hidden></div>
+    </div>
+    <div class="under"><button id="prevLine" type="button" title="Previous line">&#9664;</button><span id="lineInfo">Drag the caption on the video to place it.</span><button id="nextLine" type="button" title="Next line">&#9654;</button></div>
+
+    <section class="card" id="syncSec" hidden>
+      <h2>Sync check <span style="text-transform:none;letter-spacing:0">Play the video &middot; red = check this one &middot; click a line to jump</span></h2>
+      <label style="margin-top:0">Shift all captions: <b id="offVal">0.00 s</b> (left = earlier)</label>
+      <input type="range" id="offset" min="-1" max="1" step="0.05" value="0">
+      <div id="cueList"></div>
+    </section>
+
+    <section class="card" id="result" hidden>
+      <h2>Your captioned video</h2>
+      <div id="resultText"></div>
+      <video id="outVideo" controls playsinline></video>
+    </section>
+  </div>
+
+  <aside>
+    <div class="scroll">
+      <div class="group">
+        <h3>Files</h3>
+        <div class="drop" id="videoDrop"><span class="ico">&#9654;</span><span>Choose video (.mp4 / .mov)</span><input type="file" id="videoFile" accept="video/*"></div>
+        <div class="drop" id="srtDrop"><span class="ico">Aa</span><span>Choose subtitles (.srt)</span><input type="file" id="srtFile" accept=".srt"></div>
+        <div class="hint" id="srtInfo"></div>
+        <button id="alignBtn" type="button" disabled style="width:100%;margin-top:10px">Time captions to my voice &middot; check sync</button>
+        <div class="hint" id="alignInfo">Optional but recommended: lets you see and fix the exact timing before rendering.</div>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button type="button" class="on" data-tab="tabStyle">Style</button>
+        <button type="button" data-tab="tabFont">Font</button>
+        <button type="button" data-tab="tabPos">Position</button>
+      </div>
+
+      <div id="tabStyle" class="pane">
+        <div id="presets"></div>
+        <label>Size: <span id="sizeVal"></span></label>
+        <input type="range" id="size" min="2" max="12" step="0.1" value="5.2">
+        <div class="row">
+          <div><label for="textColor">Text</label><input type="color" id="textColor" value="#ffffff"></div>
+          <div><label for="hlColor">Highlight</label><input type="color" id="hlColor" value="#ffe257"></div>
+          <div><label for="outColor">Outline / box</label><input type="color" id="outColor" value="#000000"></div>
+        </div>
+        <label>Outline: <span id="outVal"></span></label>
+        <input type="range" id="outline" min="0" max="10" step="0.5" value="5">
+        <label>Shadow: <span id="shadowVal"></span></label>
+        <input type="range" id="shadow" min="0" max="6" step="0.5" value="2">
+        <div class="checks">
+          <label><input type="checkbox" id="bold" checked> Bold</label>
+          <label><input type="checkbox" id="italic"> Italic</label>
+          <label><input type="checkbox" id="upper"> ALL CAPS</label>
+          <label><input type="checkbox" id="hl" checked> Word highlight</label>
+          <label><input type="checkbox" id="box"> Box behind text</label>
+        </div>
+        <div id="boxRow" hidden><label>Box opacity: <span id="boxVal"></span></label><input type="range" id="boxOpacity" min="0.2" max="1" step="0.05" value="0.6"></div>
+        <label for="anim">Animation</label>
+        <select id="anim"><option value="pop">Pop in</option><option value="fade">Fade</option><option value="none">None</option></select>
+      </div>
+
+      <div id="tabFont" class="pane" hidden>
+        <input type="text" id="fontSearch" placeholder="Search fonts...">
+        <div class="hint" id="fontCount"></div>
+        <div id="fontList"></div>
+      </div>
+
+      <div id="tabPos" class="pane" hidden>
+        <div class="snap">
+          <button type="button" data-y="0.18">Top</button><button type="button" data-y="0.55">Middle</button><button type="button" data-y="0.90">Bottom</button>
+        </div>
+        <div class="pad" id="pad"><i id="padMark"></i></div>
+        <p class="hint" id="posInfo"></p>
+        <p class="hint">Tip: drag the caption directly on the video for exact placement. It snaps to the centre line.</p>
+      </div>
+    </div>
+    <footer class="render">
+      <button class="primary" id="render" type="button" disabled>Burn captions &amp; render</button>
+      <div class="bar"><i id="barFill"></i></div>
+      <div id="status"></div>
+      <div id="log"></div>
+    </footer>
+  </aside>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { video: null, srt: null, lines: ["Naama chinna vayasula", "idhu Namma Kadhai"], line: 0,
+    font: "Poppins", x: 0.5, y: 0.90, fonts: [], bundled: {}, polling: null,
+    timing: null, offset: 0 };
+
+  var PRESETS = [
+    { name: "Punch White", s: { text: "#ffffff", hl: "#ffe257", out: "#050505", outline: 6, shadow: 2, bold: true, italic: false, hl_on: true, box: false, anim: "pop" } },
+    { name: "Story Gold", s: { text: "#ffe5a3", hl: "#fff5d8", out: "#271c12", outline: 3.5, shadow: 1.5, bold: false, italic: false, hl_on: false, box: false, anim: "fade" } },
+    { name: "Vintage Yellow", s: { text: "#f7e642", hl: "#fff16a", out: "#080808", outline: 5, shadow: 2.5, bold: true, italic: true, hl_on: false, box: false, anim: "fade" } },
+    { name: "Tamil Pop", s: { text: "#fff23e", hl: "#ffffff", out: "#d20b78", outline: 5.5, shadow: 2, bold: true, italic: false, hl_on: true, box: false, anim: "pop" } },
+    { name: "Electric Cyan", s: { text: "#42f4ff", hl: "#e8feff", out: "#071b3c", outline: 4.5, shadow: 3, bold: true, italic: false, hl_on: true, box: false, anim: "pop" } },
+    { name: "Festival Pink", s: { text: "#ff4fb8", hl: "#fff0a8", out: "#4a083a", outline: 5, shadow: 2.5, bold: true, italic: false, hl_on: true, box: false, anim: "pop" } },
+    { name: "Black Box", s: { text: "#ffffff", hl: "#ffe257", out: "#000000", outline: 0, shadow: 0, bold: true, italic: false, hl_on: true, box: true, opacity: 0.65, anim: "fade" } },
+    { name: "Yellow Box", s: { text: "#111111", hl: "#c4001a", out: "#ffd60a", outline: 0, shadow: 0, bold: true, italic: false, hl_on: true, box: true, opacity: 1, anim: "pop" } },
+    { name: "Netflix", s: { text: "#ffffff", hl: "#ffffff", out: "#000000", outline: 2, shadow: 1, bold: false, italic: false, hl_on: false, box: false, anim: "none" } },
+    { name: "Lime Signal", s: { text: "#cfff3f", hl: "#ffffff", out: "#10150a", outline: 5, shadow: 2, bold: true, italic: false, hl_on: true, box: false, anim: "pop" } },
+    { name: "Crimson", s: { text: "#ffffff", hl: "#ffd8d2", out: "#a41425", outline: 5, shadow: 2.5, bold: true, italic: false, hl_on: true, box: false, anim: "pop" } },
+    { name: "Paper Cut", s: { text: "#28201b", hl: "#7a301f", out: "#fff0d2", outline: 5.5, shadow: 3.5, bold: true, italic: false, hl_on: true, box: false, anim: "pop" } }
+  ];
+
+  function api(path, options) {
+    return fetch(path, options).then(function (r) {
+      return r.json().then(function (body) { if (!r.ok) throw new Error(body.error || ("HTTP " + r.status)); return body; });
+    });
+  }
+
+  // ---------- fonts ----------
+  function loadFonts() {
+    api("/api/fonts").then(function (data) {
+      var list = [];
+      data.bundled.forEach(function (f) {
+        if (state.bundled[f.family]) return;
+        state.bundled[f.family] = f.file;
+        var face = new FontFace(f.family, "url(/fonts/" + encodeURIComponent(f.file) + ")");
+        face.load().then(function (loaded) { document.fonts.add(loaded); renderCap(); }).catch(function () {});
+        list.push({ family: f.family, source: "bundled" });
+      });
+      data.system.forEach(function (name) { if (!state.bundled[name]) list.push({ family: name, source: "installed" }); });
+      state.fonts = list;
+      if (!data.system.length) setTimeout(loadFonts, 3000);  // still loading on the server
+      drawFonts();
+    }).catch(function () { setTimeout(loadFonts, 3000); });
+  }
+  function drawFonts() {
+    var q = $("fontSearch").value.trim().toLowerCase(), box = $("fontList");
+    box.textContent = "";
+    var shown = 0;
+    state.fonts.forEach(function (f) {
+      if (q && f.family.toLowerCase().indexOf(q) < 0) return;
+      if (shown++ > 400) return;
+      var row = document.createElement("div");
+      row.style.fontFamily = '"' + f.family + '"';
+      row.textContent = f.family;
+      var tag = document.createElement("small"); tag.textContent = f.source; row.appendChild(tag);
+      if (f.family === state.font) row.className = "on";
+      row.addEventListener("click", function () { state.font = f.family; drawFonts(); renderCap(); });
+      box.appendChild(row);
+    });
+    $("fontCount").textContent = "(" + state.fonts.length + " available)";
+  }
+
+  // ---------- style ----------
+  function style() {
+    var size = parseFloat($("size").value) / 100;
+    return {
+      font_name: state.font, text_color: $("textColor").value, highlight_color: $("hlColor").value,
+      outline_color: $("outColor").value, outline_width: parseFloat($("outline").value),
+      shadow_depth: parseFloat($("shadow").value), bold: $("bold").checked, italic: $("italic").checked,
+      uppercase: $("upper").checked, word_highlight: $("hl").checked, box: $("box").checked,
+      box_color: $("outColor").value, box_opacity: parseFloat($("boxOpacity").value),
+      animation: $("anim").value, fade_in_ms: 90, fade_out_ms: 120, entrance_ms: 150,
+      font_scale: size, pos_x_scale: Math.min(0.95, Math.max(0.05, state.x)),
+      margin_y_scale: Math.min(0.95, Math.max(0, 1 - state.y))
+    };
+  }
+  function applyPreset(p, button) {
+    var s = p.s;
+    $("textColor").value = s.text; $("hlColor").value = s.hl; $("outColor").value = s.out;
+    $("outline").value = s.outline; $("shadow").value = s.shadow; $("bold").checked = s.bold;
+    $("italic").checked = s.italic; $("hl").checked = s.hl_on; $("box").checked = s.box;
+    if (s.opacity) $("boxOpacity").value = s.opacity;
+    $("anim").value = s.anim;
+    document.querySelectorAll("#presets button").forEach(function (b) { b.classList.toggle("on", b === button); });
+    renderCap();
+  }
+  PRESETS.forEach(function (p, i) {
+    var b = document.createElement("button"); b.type = "button"; b.title = p.name;
+    var sw = document.createElement("span"), x = p.s;
+    sw.className = "sw"; sw.textContent = "Aa";
+    sw.style.color = x.text; sw.style.fontStyle = x.italic ? "italic" : "normal";
+    if (x.box) { sw.innerHTML = "<span>Aa</span>"; var inner = sw.firstChild;
+      inner.style.background = x.out; inner.style.padding = "1px 8px"; inner.style.borderRadius = "3px";
+      inner.style.opacity = 1; }
+    else if (x.outline) { var o = Math.min(2.5, x.outline / 2), parts = [];
+      for (var a = 0; a < 8; a++) parts.push((Math.cos(a * Math.PI / 4) * o).toFixed(1) + "px " + (Math.sin(a * Math.PI / 4) * o).toFixed(1) + "px 0 " + x.out);
+      sw.style.textShadow = parts.join(","); }
+    var nm = document.createElement("span"); nm.className = "nm"; nm.textContent = p.name;
+    b.appendChild(sw); b.appendChild(nm);
+    b.addEventListener("click", function () { applyPreset(p, b); });
+    $("presets").appendChild(b);
+    if (i === 0) b.classList.add("on");
+  });
+
+  // ---------- preview ----------
+  function videoBox() {
+    var v = $("video"), stage = $("stage").getBoundingClientRect(), r = v.getBoundingClientRect();
+    return { left: r.left - stage.left, top: r.top - stage.top, width: r.width, height: r.height };
+  }
+  function renderCap() {
+    var s = style(), cap = $("cap");
+    $("sizeVal").textContent = $("size").value + "% of height";
+    $("outVal").textContent = $("outline").value; $("shadowVal").textContent = $("shadow").value;
+    $("boxVal").textContent = Math.round($("boxOpacity").value * 100) + "%";
+    $("boxRow").hidden = !s.box;
+    $("posInfo").textContent = "Centre " + Math.round(state.x * 100) + "% across, bottom edge " + Math.round(state.y * 100) + "% down.";
+    if ($("video").hidden) return;
+    // ASS sizes are in video pixels; scale them to the on-screen player.
+    var box = videoBox(), px = s.font_scale * box.height, scale = box.height / ($("video").videoHeight || 1080);
+    var text = state.lines[state.line] || "", cue = null, ghost = false;
+    if (state.timing) {
+      var t = $("video").currentTime - state.offset, list = state.timing.captions;
+      cue = list.find(function (c) { return t >= c.start && t < c.end; }) || null;
+      if (!cue) { ghost = true; cue = list.find(function (c) { return c.start > t; }) || list[list.length - 1]; }
+      text = cue.text;
+      markCurrent(cue);
+    }
+    if (s.uppercase) text = text.toUpperCase();
+    cap.hidden = false;
+    cap.style.opacity = ghost && !$("video").paused ? "0" : (ghost ? "0.35" : "1");
+    cap.style.left = (box.left + state.x * box.width) + "px";
+    cap.style.top = (box.top + state.y * box.height) + "px";
+    cap.style.fontFamily = '"' + s.font_name + '", sans-serif';
+    cap.style.fontSize = px + "px";
+    cap.style.fontWeight = s.bold ? "700" : "400";
+    cap.style.fontStyle = s.italic ? "italic" : "normal";
+    cap.style.color = s.text_color;
+    cap.style.maxWidth = (box.width * 0.86) + "px";
+    var o = Math.max(0, s.outline_width * scale);
+    if (s.box) {
+      var hex = s.box_color.replace("#", ""), rgb = [0, 2, 4].map(function (i) { return parseInt(hex.substr(i, 2), 16); });
+      cap.style.background = "rgba(" + rgb.join(",") + "," + s.box_opacity + ")";
+      cap.style.padding = (px * 0.12) + "px " + (px * 0.3) + "px";
+      cap.style.textShadow = "none"; cap.style.webkitTextStroke = "0";
+    } else {
+      cap.style.background = "transparent"; cap.style.padding = "0 .25em";
+      var sh = s.shadow_depth * scale, c = s.outline_color, parts = [];
+      for (var a = 0; a < 16; a++) { var t = a * Math.PI / 8; parts.push((Math.cos(t) * o).toFixed(1) + "px " + (Math.sin(t) * o).toFixed(1) + "px 0 " + c); }
+      if (sh) parts.push(sh + "px " + sh + "px " + (sh * 1.5) + "px rgba(0,0,0,.7)");
+      cap.style.textShadow = o || sh ? parts.join(",") : "none";
+    }
+    cap.textContent = "";
+    var words = text.split(/\s+/);
+    words.forEach(function (w, i) {
+      var span = document.createElement("span"); span.textContent = w + (i < words.length - 1 ? " " : "");
+      if (s.word_highlight) {
+        if (cue && cue.words && cue.words.length === words.length) {
+          var t2 = $("video").currentTime - state.offset, w = cue.words[i], next = cue.words[i + 1];
+          if (!ghost && t2 >= w.start && (!next || t2 < next.start)) span.style.color = s.highlight_color;
+        } else if (!state.timing && i === 1) span.style.color = s.highlight_color;
+      }
+      cap.appendChild(span);
+    });
+    if (state.timing) { $("lineInfo").textContent = ghost ? "(no caption at this moment; drag still works)" : "Live: " + text; return; }
+    $("lineInfo").textContent = "Preview line " + (state.line + 1) + " / " + state.lines.length + ": " + (state.lines[state.line] || "");
+  }
+
+  // drag to place
+  (function () {
+    var cap = $("cap"), drag = null;
+    cap.addEventListener("pointerdown", function (e) {
+      var box = videoBox(); drag = { box: box, dx: e.clientX, dy: e.clientY, x: state.x, y: state.y };
+      cap.setPointerCapture(e.pointerId); cap.classList.add("dragging");
+    });
+    cap.addEventListener("pointermove", function (e) {
+      if (!drag) return;
+      state.x = Math.min(0.95, Math.max(0.05, drag.x + (e.clientX - drag.dx) / drag.box.width));
+      state.y = Math.min(1, Math.max(0.08, drag.y + (e.clientY - drag.dy) / drag.box.height));
+      if (Math.abs(state.x - 0.5) < 0.02) state.x = 0.5;  // snap to centre
+      renderCap();
+    });
+    function end() { drag = null; cap.classList.remove("dragging"); }
+    cap.addEventListener("pointerup", end); cap.addEventListener("pointercancel", end);
+  })();
+  document.querySelectorAll(".snap button").forEach(function (b) {
+    b.addEventListener("click", function () { state.y = parseFloat(b.dataset.y); state.x = 0.5; renderCap(); });
+  });
+  $("prevLine").addEventListener("click", function () { state.line = Math.max(0, state.line - 1); renderCap(); });
+  $("nextLine").addEventListener("click", function () { state.line = Math.min(state.lines.length - 1, state.line + 1); renderCap(); });
+  window.addEventListener("resize", renderCap);
+  ["size", "textColor", "hlColor", "outColor", "outline", "shadow", "bold", "italic", "upper", "hl", "box", "boxOpacity", "anim"].forEach(function (id) {
+    $(id).addEventListener("input", renderCap); $(id).addEventListener("change", renderCap);
+  });
+  $("fontSearch").addEventListener("input", drawFonts);
+
+  // ---------- sync check ----------
+  function fmt(t) { var m = Math.floor(t / 60), s2 = (t - m * 60).toFixed(2); return m + ":" + (s2 < 10 ? "0" : "") + s2; }
+  function low(c) { return (c.words || []).some(function (w) { return w.confidence !== undefined && w.confidence < 0.35; }); }
+  function shiftCue(c, d) {
+    c.start = Math.max(0, c.start + d); c.end = Math.max(c.start + 0.05, c.end + d);
+    (c.words || []).forEach(function (w) { w.start = Math.max(c.start, w.start + d); w.end = Math.max(w.start + 0.01, w.end + d); });
+  }
+  function drawCues() {
+    var box = $("cueList"); box.textContent = "";
+    state.timing.captions.forEach(function (c, i) {
+      var row = document.createElement("div"); row.className = "cue" + (low(c) ? " low" : ""); row.dataset.i = i;
+      var t = document.createElement("span"); t.className = "t"; t.textContent = fmt(c.start) + "-" + fmt(c.end);
+      var tx = document.createElement("span"); tx.textContent = c.text;
+      var b = document.createElement("span"); b.className = "b";
+      [["-0.1", -0.1, "Caption earlier"], ["+0.1", 0.1, "Caption later"]].forEach(function (d) {
+        var k = document.createElement("button"); k.type = "button"; k.textContent = d[0]; k.title = d[2];
+        k.addEventListener("click", function (e) { e.stopPropagation(); shiftCue(c, d[1]); drawCues(); seek(c); });
+        b.appendChild(k);
+      });
+      var here = document.createElement("button"); here.type = "button"; here.textContent = "start here";
+      here.title = "Move this caption so it starts at the current video time";
+      here.addEventListener("click", function (e) { e.stopPropagation(); shiftCue(c, ($("video").currentTime - state.offset) - c.start); drawCues(); renderCap(); });
+      b.appendChild(here);
+      row.appendChild(t); row.appendChild(tx); row.appendChild(b);
+      row.addEventListener("click", function () { seek(c); });
+      box.appendChild(row);
+    });
+  }
+  function seek(c) { var v = $("video"); v.currentTime = Math.max(0, c.start + state.offset - 0.3); renderCap(); }
+  var lastNow = null;
+  function markCurrent(cue) {
+    if (cue === lastNow) return; lastNow = cue;
+    var idx = state.timing.captions.indexOf(cue);
+    document.querySelectorAll(".cue").forEach(function (r) { r.classList.toggle("now", +r.dataset.i === idx); });
+  }
+  (function loop() { if (state.timing && !$("video").paused) renderCap(); requestAnimationFrame(loop); })();
+  ["seeked", "pause", "play"].forEach(function (ev) { $("video").addEventListener(ev, renderCap); });
+  $("offset").addEventListener("input", function () {
+    state.offset = parseFloat(this.value); $("offVal").textContent = state.offset.toFixed(2) + " s"; renderCap();
+  });
+  $("alignBtn").addEventListener("click", function () {
+    $("alignBtn").disabled = true; $("alignInfo").textContent = "Timing every word to your voice... (about a minute per minute of video)";
+    api("/api/align", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video: state.video, srt: state.srt }) })
+      .then(function (r) { pollAlign(r.job.job_id); })
+      .catch(function (e) { $("alignInfo").innerHTML = "<span class='bad'>" + e.message + "</span>"; ready(); });
+  });
+  function pollAlign(id) {
+    api("/api/jobs/" + id).then(function (r) {
+      var j = r.job;
+      if (j.status === "running") { setTimeout(function () { pollAlign(id); }, 1500); return; }
+      ready();
+      if (j.status !== "succeeded") { $("alignInfo").innerHTML = "<span class='bad'>" + j.error + "</span>"; return; }
+      return api("/api/captions?path=" + encodeURIComponent(j.output)).then(function (data) {
+        state.timing = data; state.offset = 0; $("offset").value = 0; $("offVal").textContent = "0.00 s";
+        var a = data.source.alignment, lows = state.timing.captions.filter(low).length;
+        var msg = "✓ " + a.aligned_word_count + " words timed (match " + Math.round(a.mean_word_confidence * 100) + "%). " +
+          data.captions.length + " captions" + (lows ? ", " + lows + " to check (red)." : ", all clear.");
+        if (a.not_in_audio && a.not_in_audio.length) msg += " " + a.not_in_audio.length + " SRT line(s) not heard in the video.";
+        $("alignInfo").textContent = msg;
+        $("syncSec").hidden = false; drawCues(); renderCap();
+        $("render").textContent = "Burn checked captions & render";
+      });
+    }).catch(function () { setTimeout(function () { pollAlign(id); }, 3000); });
+  }
+
+  // ---------- uploads ----------
+  function upload(file, kind, drop) {
+    var text = drop.children[1];
+    text.textContent = "Uploading " + file.name + "...";
+    return api("/api/upload", { method: "POST", body: file,
+      headers: { "X-Filename": encodeURIComponent(file.name), "X-Kind": kind } })
+      .then(function (r) { drop.classList.add("done"); drop.children[0].textContent = "\u2713"; text.textContent = file.name; return r; })
+      .catch(function (e) { text.textContent = "Upload failed: " + e.message; throw e; });
+  }
+  $("videoFile").addEventListener("change", function () {
+    var f = this.files[0]; if (!f) return;
+    upload(f, "video", $("videoDrop")).then(function (r) {
+      state.video = r.path; state.timing = null; $("syncSec").hidden = true;
+      var v = $("video"); v.src = "/media?path=" + encodeURIComponent(r.path); v.hidden = false; $("empty").hidden = true;
+      v.addEventListener("loadedmetadata", function () {
+        var vertical = v.videoHeight > v.videoWidth;
+        if (!state.sizeTouched) { $("size").value = vertical ? 4.2 : 5.5; }
+        renderCap();
+      }, { once: true });
+      ready();
+    });
+  });
+  $("size").addEventListener("input", function () { state.sizeTouched = true; });
+  $("srtFile").addEventListener("change", function () {
+    var f = this.files[0]; if (!f) return;
+    upload(f, "srt", $("srtDrop")).then(function (r) {
+      state.srt = r.path; state.timing = null; $("syncSec").hidden = true; state.lines = r.lines_preview.length ? chunk(r.lines_preview) : state.lines; state.line = 0;
+      var info = r.lines + " lines, " + r.words + " words.";
+      if (r.junk_lines_removed) info += " Removed " + r.junk_lines_removed + " junk lines.";
+      if (r.tamil_words_transliterated.length) info += " Tamil script converted: " + r.tamil_words_transliterated.join(", ") + ".";
+      $("srtInfo").textContent = info; renderCap(); ready();
+    });
+  });
+  // Same rule as the renderer: long SRT lines become captions of at most 32 characters.
+  function chunk(lines) {
+    var out = [];
+    lines.forEach(function (line) {
+      var cur = "";
+      line.split(/\s+/).forEach(function (w) {
+        if (cur && (cur + " " + w).length > 32) { out.push(cur); cur = w; } else { cur = cur ? cur + " " + w : w; }
+      });
+      if (cur) out.push(cur);
+    });
+    return out;
+  }
+  function ready() { var ok = !!(state.video && state.srt); $("render").disabled = !ok; $("alignBtn").disabled = !ok; }
+
+  // ---------- render ----------
+  $("render").addEventListener("click", function () {
+    $("render").disabled = true; $("result").hidden = true; $("log").textContent = "";
+    setStatus("Starting…", 2);
+    api("/api/render", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ video: state.video, srt: state.srt, style: style(), captions: checkedTiming() }) })
+      .then(function (r) { poll(r.job.job_id); })
+      .catch(function (e) { setStatus("<span class='bad'>" + e.message + "</span>", 0); ready(); });
+  });
+  function checkedTiming() {
+    if (!state.timing) return null;
+    var copy = JSON.parse(JSON.stringify(state.timing));
+    if (state.offset) copy.captions.forEach(function (c) { shiftCue(c, state.offset); });
+    return copy;
+  }
+  function setStatus(html, pct) { $("status").innerHTML = html; $("barFill").style.width = pct + "%"; }
+  function poll(id) {
+    api("/api/jobs/" + id).then(function (r) {
+      var j = r.job; $("log").textContent = j.log.join("\n"); $("log").scrollTop = 1e9;
+      if (j.status === "running") { setStatus(j.stage + "…", j.progress); setTimeout(function () { poll(id); }, 1500); return; }
+      ready();
+      if (j.status === "succeeded") {
+        setStatus("<span class='ok'>Done. Your video is below the preview.</span>", 100);
+        $("render").dataset.done = "1";
+        $("result").scrollIntoView({ behavior: "smooth" });
+        var url = "/media?path=" + encodeURIComponent(j.output);
+        $("resultText").innerHTML = "Saved to:<br><code></code><br><a download>Download the video</a>";
+        $("resultText").querySelector("code").textContent = j.output;
+        $("resultText").querySelector("a").href = url + "&download=1";
+        $("outVideo").src = url; $("result").hidden = false;
+      } else {
+        setStatus("<span class='bad'>" + (j.error || "Render failed.") + "</span>", 100);
+      }
+    }).catch(function () { setTimeout(function () { poll(id); }, 3000); });
+  }
+
+  document.querySelectorAll(".tabs button").forEach(function (t) {
+    t.addEventListener("click", function () {
+      document.querySelectorAll(".tabs button").forEach(function (o) { o.classList.toggle("on", o === t); });
+      document.querySelectorAll(".pane").forEach(function (p) { p.hidden = p.id !== t.dataset.tab; });
+    });
+  });
+  (function () {
+    var target = $("stage"), zone = $("empty");
+    ["dragenter", "dragover"].forEach(function (ev) { target.addEventListener(ev, function (e) { e.preventDefault(); zone.classList.add("over"); }); });
+    ["dragleave", "drop"].forEach(function (ev) { target.addEventListener(ev, function (e) { e.preventDefault(); zone.classList.remove("over"); }); });
+    target.addEventListener("drop", function (e) {
+      Array.prototype.forEach.call(e.dataTransfer.files, function (f) {
+        var input = /\.srt$/i.test(f.name) ? $("srtFile") : $("videoFile"), dt = new DataTransfer();
+        dt.items.add(f); input.files = dt.files; input.dispatchEvent(new Event("change"));
+      });
+    });
+  })();
+  function chips() {
+    var have = !!(state.video && state.srt), done = $("render").dataset.done === "1";
+    [["st1", have], ["st2", have], ["st3", !!state.timing], ["st4", done]].forEach(function (c, i, all) {
+      var el = $(c[0]); el.classList.toggle("done", c[1]);
+      var first = all.findIndex(function (x) { return !x[1]; });
+      el.classList.toggle("now", i === first);
+    });
+  }
+  setInterval(function () {
+    chips();
+    var m = $("padMark"); m.style.left = (state.x * 100) + "%"; m.style.top = (state.y * 100) + "%";
+    var v = $("video"); if (v.videoWidth) $("pad").style.aspectRatio = v.videoWidth + "/" + v.videoHeight;
+  }, 300);
+
+  loadFonts(); renderCap();
+})();
+</script>
+</body>
+</html>
