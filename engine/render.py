@@ -3,7 +3,7 @@ import os
 
 from common import run
 
-FONT = "edited/v2/fonts/Poppins-Bold.ttf"
+FONT = "fonts/Poppins-Bold.ttf"
 
 
 def zoom_scale(amount, direction, start, length):
@@ -39,7 +39,7 @@ def graph(shots, ass_path, audio_filter, fps, review=False, exact=False, pre="",
         guides = (",drawbox=y=220:w=1080:h=2:color=red@0.7:t=fill,drawbox=y=1440:w=1080:h=2:color=red@0.7:t=fill,"
                   "drawbox=x=960:y=0:w=2:h=1920:color=red@0.7:t=fill,"
                   f"drawtext=fontfile={FONT}:text='%{{pts\\:hms}}':x=40:y=1840:fontsize=44:fontcolor=yellow:box=1:boxcolor=black@0.6")
-    fontsdir = "edited/v2/fonts"
+    fontsdir = "fonts"
     picture = f"[vc]unsharp=5:5:0.35,fps={fps}"
     if mask:
         picture += f"[vb];movie={mask},format=rgba[mk];[vb][mk]overlay=eof_action=repeat"

@@ -1,6 +1,6 @@
 """Extracts the exact frames each beat shows, so Remotion composites images and needs no video decoder.
 
-Run from the AI Video Editor folder, after build_story.py:  python video_auto/project/extract_frames.py ramayana
+Run from the AI Video Editor folder, after build_story.py:  python engine/extract_frames.py ramayana
 The images are temporary; delete remotion/public/seq after the render. Clips and footage are only read.
 """
 import glob
@@ -10,12 +10,12 @@ import shutil
 import subprocess
 import sys
 
-sys.path.insert(0, "video_auto/project")
+sys.path.insert(0, "engine")
 from analyze_references import FF
 
-REMOTION = "video_auto/project/remotion"
+REMOTION = "remotion"
 STORY = sys.argv[1]
-BASE = f"video_auto/previews/{STORY}-v1/{STORY}-v1-base.mp4"
+BASE = f"4_previews/{STORY}-v1/{STORY}-v1-base.mp4"
 SEQ = f"{REMOTION}/public/seq"
 FPS = 30
 LUMA = (0.2126, 0.7152, 0.0722)

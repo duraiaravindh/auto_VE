@@ -1,7 +1,7 @@
 """Measures reference videos with FFmpeg and writes analysis files. Originals are only read.
 
-Run from the AI Video Editor folder:  python video_auto/project/analyze_references.py
-Writes: video_auto/analysis/reference_measurements.json, reference_contact_sheet.jpg
+Run from the AI Video Editor folder:  python engine/analyze_references.py
+Writes: references/analysis/reference_measurements.json, reference_contact_sheet.jpg
 Frames are small and handled one at a time, to stay light on memory.
 """
 import glob
@@ -15,8 +15,8 @@ import tempfile
 
 from PIL import Image, ImageDraw
 
-ROOT = "video_auto"
-ANALYSIS = f"{ROOT}/analysis"
+ROOT = "references"
+ANALYSIS = "references/analysis"
 FRAMES_PER_ROW, THUMB_W, THUMB_H = 12, 150, 267
 
 
@@ -95,7 +95,7 @@ def contact_sheet(paths, durations, out):
 
 def main():
     os.makedirs(ANALYSIS, exist_ok=True)
-    paths = sorted(p for p in glob.glob(f"{ROOT}/references/*") + glob.glob("references/*") if p.lower().endswith((".mp4", ".mov", ".mkv", ".webm")))
+    paths = sorted(p for p in glob.glob("references/*") if p.lower().endswith((".mp4", ".mov", ".mkv", ".webm")))
     seen, unique = set(), []
     for p in paths:
         if os.path.basename(p) not in seen:

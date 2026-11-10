@@ -1,7 +1,7 @@
 """Transcribes a clip with the locally cached Whisper model. Nothing is downloaded or uploaded.
 
 Run from the AI Video Editor folder:
-    python video_auto/project/transcribe.py <clip> <output folder>
+    python engine/transcribe.py <clip> <output folder>
 Writes <output folder>/whisper_ta.json with segments and word timings. The clip is only read.
 """
 import json
@@ -9,7 +9,7 @@ import os
 import subprocess
 import sys
 
-sys.path.insert(0, "video_auto/project")
+sys.path.insert(0, "engine")
 from analyze_references import FF
 
 import torch

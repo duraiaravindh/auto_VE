@@ -1,11 +1,11 @@
 """Namma Kadhai editing engine.
 
-  python edited/v2/engine/nk.py plan   edited/v2/edits/<name>/edit.json   # analysis + timeline, no video
-  python edited/v2/engine/nk.py render edited/v2/edits/<name>/edit.json --approved
-  python edited/v2/engine/nk.py qc     edited/v2/edits/<name>/edit.json
-  python edited/v2/engine/nk.py preview edited/v2/edits/<name>/edit.json 0:5 24:5    # short review clips
-  python edited/v2/engine/nk.py length edited/v2/edits/<name>/edit.json              # true frame count, no video
-  python edited/v2/engine/nk.py still  edited/v2/edits/<name>/edit.json 0.5 96.5   # test PNGs at output times
+  python engine/nk.py plan   stories/<name>/edit.json   # analysis + timeline, no video
+  python engine/nk.py render stories/<name>/edit.json --approved
+  python engine/nk.py qc     stories/<name>/edit.json
+  python engine/nk.py preview stories/<name>/edit.json 0:5 24:5    # short review clips
+  python engine/nk.py length stories/<name>/edit.json              # true frame count, no video
+  python engine/nk.py still  stories/<name>/edit.json 0.5 96.5   # test PNGs at output times
 
 All creative decisions live in edit.json. Raw footage is only ever read.
 """
@@ -69,7 +69,7 @@ def build(edit_path):
 
     phrases = captions.time_phrases(cues, edit["phrases"], env, silences)
     captions.place_on_output(phrases, shots, edit["caption_style"])
-    font = "edited/v2/fonts/Poppins-Bold.ttf"
+    font = "fonts/Poppins-Bold.ttf"
     for p in phrases:
         p["lines"] = captions.fit_lines(p["text"], edit["caption_style"], font)
     captions.check_lines(phrases)
@@ -123,7 +123,7 @@ def make_graph(edit, shots, ass, af, review=False):
 
 
 def print_ass_checks(ass, cues, edit):
-    results = qc.check_ass(ass, cues, edit["caption_style"], "edited/v2/fonts/Poppins-Bold.ttf") + edit.get("_fx_results", [])
+    results = qc.check_ass(ass, cues, edit["caption_style"], "fonts/Poppins-Bold.ttf") + edit.get("_fx_results", [])
     for r in results:
         print("PASS" if r["pass"] else "FAIL", r["check"], "-", r["detail"])
     if not all(r["pass"] for r in results):
@@ -142,7 +142,7 @@ def still(edit, folder, source, shots, at, out):
             wall = f"[vb];movie={mask},format=rgba[mk];[vb][mk]overlay=eof_action=repeat" if mask else ""
             run("ffmpeg", "-v", "error", "-y", "-ss", f"{s['in'] + at - pos:.3f}", "-i", source, "-frames:v", "1", "-vf",
                 f"{'hflip,' if edit.get('hflip') else ''}crop={w}:{h}:{x}:{y},scale=1080:1920:flags=lanczos,setsar=1,setpts={at}/TB,unsharp=5:5:0.35{wall},"
-                f"{effects.pre_filters(edit.get('_layer'))}ass={ass}:fontsdir=edited/v2/fonts", out)
+                f"{effects.pre_filters(edit.get('_layer'))}ass={ass}:fontsdir=fonts", out)
             return
         pos += length
     raise SystemExit(f"{at}s is past the end")

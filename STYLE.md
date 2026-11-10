@@ -1,7 +1,7 @@
 # STYLE.md: Namma Kadhai Reels
 
 Status: approved standard, adapted to each story.
-Standard example: `exports/deepavali-v1.mp4`. It replaces the older v12 look.
+Standard example: `5_exports/deepavali-v1.mp4`. It replaces the older v12 look.
 References studied: reel1, reel2, reel4, reel5. Use them for style only; never re-upload them.
 
 ## How this style works
@@ -114,7 +114,7 @@ Mix these so the picture keeps changing:
 
 ## Output
 - Show previews before a full render
-- Run full QC, then save the final to `exports/`
+- Run full QC, then save the final to `5_exports/`
 - Never overwrite raw footage or earlier exports
 
 ## Ideas not used yet

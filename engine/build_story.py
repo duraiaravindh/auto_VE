@@ -1,6 +1,6 @@
 """Checks a story's beats against the real timeline and writes the data for its composition.
 
-Run from the AI Video Editor folder, after `nk.py plan`:  python video_auto/project/build_story.py ramayana
+Run from the AI Video Editor folder, after `nk.py plan`:  python engine/build_story.py ramayana
 Stops on any rule failure. Before the base exists it uses the planned length; run it again after `nk.py base`.
 Also writes the sound cues into effects.json, so the next `nk.py base` places them.
 """
@@ -9,14 +9,14 @@ import os
 import subprocess
 import sys
 
-sys.path.insert(0, "edited/v2/engine")
-sys.path.insert(0, "video_auto/project")
+sys.path.insert(0, "engine")
+sys.path.insert(0, "engine")
 import captions
 from analyze_references import FP
 
 STORY = sys.argv[1]
-EDIT = f"edited/v2/edits/{STORY}-v1"
-REMOTION = "video_auto/project/remotion"
+EDIT = f"stories/{STORY}-v1"
+REMOTION = "remotion"
 CLIP_SECONDS = 10.0
 # brightness, contrast, saturation, warmth as multipliers: applied to all footage, never to text
 GRADES = {"diwali2": {"brightness": 0.93, "contrast": 1.08, "saturation": 0.94, "warmth": 0.05}}
@@ -37,11 +37,11 @@ def clip_seconds(name):
 
 
 def main():
-    timeline, beats = load(f"{EDIT}/timeline.json"), load(f"video_auto/project/{STORY}_beats.json")
+    timeline, beats = load(f"{EDIT}/timeline.json"), load(f"stories/{STORY}-v1/beats.json")
     edit, effects = load(f"{EDIT}/edit.json"), load(f"{EDIT}/effects.json")
     phrases, shots = timeline["phrases"], timeline["shots"]
     # the base decides the length: the source can end a frame or two before the plan's last cut
-    base = f"video_auto/previews/{edit['name']}/{edit['name']}-base.mp4"
+    base = f"4_previews/{edit['name']}/{edit['name']}-base.mp4"
     total = timeline["output_seconds"]
     if os.path.exists(base):
         total = int(subprocess.run([FP, "-v", "error", "-count_frames", "-select_streams", "v", "-show_entries", "stream=nb_read_frames",

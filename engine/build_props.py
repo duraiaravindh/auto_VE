@@ -7,11 +7,11 @@ import os
 import shutil
 import sys
 
-sys.path.insert(0, "edited/v2/engine")
+sys.path.insert(0, "engine")
 import captions
 
-EDIT = "edited/v2/edits/namma-kadhai-v13"
-REMOTION = "video_auto/project/remotion"
+EDIT = "stories/namma-kadhai-v13"
+REMOTION = "remotion"
 
 
 def load(path):
@@ -20,7 +20,7 @@ def load(path):
 
 
 def main():
-    timeline, scenes = load(f"{EDIT}/timeline.json"), load("video_auto/project/scenes.json")
+    timeline, scenes = load(f"{EDIT}/timeline.json"), load("stories/namma-kadhai-v13/scenes.json")
     edit, effects = load(f"{EDIT}/edit.json"), load(f"{EDIT}/effects.json")
     phrases, shots = timeline["phrases"], timeline["shots"]
     calm = [(captions.to_output_time(x["from"], shots), captions.to_output_time(x["to"], shots)) for x in edit["pause_policy"]["protected"]]
@@ -65,7 +65,7 @@ def main():
 
     os.makedirs(f"{REMOTION}/public/fonts", exist_ok=True)
     for name in ("Anton-Regular.ttf", "KaushanScript-Regular.ttf", "Poppins-Bold.ttf"):
-        shutil.copyfile(f"edited/v2/fonts/{name}", f"{REMOTION}/public/fonts/{name}")
+        shutil.copyfile(f"fonts/{name}", f"{REMOTION}/public/fonts/{name}")
     print(f"ok: {len(resolved)} scenes, {sum(s['end'] - s['start'] for s in resolved):.1f}s of {total:.1f}s")
     for s in resolved:
         print(f"  {s['id']:9} {s['start']:6.2f}-{s['end']:6.2f} {s['layout']}")

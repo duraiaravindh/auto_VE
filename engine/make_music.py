@@ -2,7 +2,7 @@
 
 The melody is written here in the Mohanam scale. It is not taken from any song or film.
 The same settings always give the same file.
-Usage:  python video_auto/project/make_music.py <seconds> <out.wav> [festive]
+Usage:  python engine/make_music.py <seconds> <out.wav> [festive]
 "festive" moves up a tone, adds a soft hand drum that fades out as the story turns, and reorders the melody.
 """
 import sys

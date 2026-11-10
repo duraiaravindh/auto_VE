@@ -5,11 +5,11 @@ Run from the AI Video Editor folder. Stops on any rule failure.
 import json
 import sys
 
-sys.path.insert(0, "edited/v2/engine")
+sys.path.insert(0, "engine")
 import captions
 
-EDIT = "edited/v2/edits/namma-kadhai-v13"
-REMOTION = "video_auto/project/remotion"
+EDIT = "stories/namma-kadhai-v13"
+REMOTION = "remotion"
 END_SECONDS = 1.9  # starts as the sign-off begins, after "share pannunga"
 
 
@@ -19,7 +19,7 @@ def load(path):
 
 
 def main():
-    timeline, moments = load(f"{EDIT}/timeline.json"), load("video_auto/project/text_moments.json")
+    timeline, moments = load(f"{EDIT}/timeline.json"), load("stories/namma-kadhai-v13/text_moments.json")
     edit, effects = load(f"{EDIT}/edit.json"), load(f"{EDIT}/effects.json")
     phrases, shots = timeline["phrases"], timeline["shots"]
     total = timeline["output_seconds"]

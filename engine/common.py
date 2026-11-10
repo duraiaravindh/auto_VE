@@ -5,7 +5,7 @@ import re
 import shutil
 import subprocess
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
 def tool(name):
